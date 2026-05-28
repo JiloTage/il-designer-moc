@@ -8,6 +8,7 @@
     ["Place Embedded...", "埋め込み配置..."],
     ["Export PNG", "PNGを書き出し"],
     ["Export JPEG", "JPEGを書き出し"],
+    ["Export PSD", "PSDを書き出し"],
     ["Revert", "復帰"],
     ["Edit", "編集"],
     ["Undo", "取り消し"],

@@ -137,6 +137,7 @@ const buttons = {
   open: document.querySelector("#openButton"),
   savePng: document.querySelector("#savePngButton"),
   saveJpg: document.querySelector("#saveJpgButton"),
+  savePsd: document.querySelector("#savePsdButton"),
   resetAdjust: document.querySelector("#resetAdjustButton"),
   newAdjustmentLayer: document.querySelector("#newAdjustmentLayerButton"),
   newHistorySnapshot: document.querySelector("#newHistorySnapshotButton"),
@@ -12062,6 +12063,218 @@ function exportImage(type) {
   link.click();
 }
 
+class PsdWriter {
+  constructor() {
+    this.chunks = [];
+    this.length = 0;
+  }
+
+  bytes(value) {
+    this.chunks.push(value);
+    this.length += value.length;
+  }
+
+  u8(value) {
+    this.bytes(Uint8Array.of(value & 0xff));
+  }
+
+  u16(value) {
+    this.bytes(Uint8Array.of((value >> 8) & 0xff, value & 0xff));
+  }
+
+  i16(value) {
+    this.u16(value < 0 ? 0x10000 + value : value);
+  }
+
+  u32(value) {
+    this.bytes(Uint8Array.of((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff));
+  }
+
+  i32(value) {
+    this.u32(value < 0 ? 0x100000000 + value : value);
+  }
+
+  ascii(text) {
+    const bytes = new Uint8Array(text.length);
+    for (let index = 0; index < text.length; index += 1) {
+      bytes[index] = text.charCodeAt(index) & 0xff;
+    }
+    this.bytes(bytes);
+  }
+
+  pad(size) {
+    if (size > 0) this.bytes(new Uint8Array(size));
+  }
+
+  toBytes() {
+    const output = new Uint8Array(this.length);
+    let offset = 0;
+    this.chunks.forEach((chunk) => {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return output;
+  }
+}
+
+function psdAsciiBytes(text, maxLength = 255) {
+  const normalized = String(text || "Layer").replace(/[^\x20-\x7e]/g, "?").slice(0, maxLength);
+  const bytes = new Uint8Array(normalized.length);
+  for (let index = 0; index < normalized.length; index += 1) {
+    bytes[index] = normalized.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function writePsdPascalString(writer, text) {
+  const name = psdAsciiBytes(text);
+  writer.u8(name.length);
+  writer.bytes(name);
+  writer.pad((4 - ((name.length + 1) % 4)) % 4);
+}
+
+function psdBlendModeKey(blendMode) {
+  return {
+    "source-over": "norm",
+    darken: "dark",
+    multiply: "mul ",
+    "color-burn": "idiv",
+    lighten: "lite",
+    screen: "scrn",
+    "color-dodge": "div ",
+    lighter: "lddg",
+    overlay: "over",
+    "soft-light": "sLit",
+    "hard-light": "hLit",
+    difference: "diff",
+    exclusion: "smud",
+    hue: "hue ",
+    saturation: "sat ",
+    color: "colr",
+    luminosity: "lum ",
+  }[blendMode] || "norm";
+}
+
+function canvasToPsdChannelData(canvas) {
+  const pixels = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data;
+  const pixelCount = canvas.width * canvas.height;
+  const channels = [0, 1, 2, 3].map(() => new Uint8Array(pixelCount + 2));
+  for (let pixelIndex = 0, sourceIndex = 0; pixelIndex < pixelCount; pixelIndex += 1, sourceIndex += 4) {
+    channels[0][pixelIndex + 2] = pixels[sourceIndex];
+    channels[1][pixelIndex + 2] = pixels[sourceIndex + 1];
+    channels[2][pixelIndex + 2] = pixels[sourceIndex + 2];
+    channels[3][pixelIndex + 2] = pixels[sourceIndex + 3];
+  }
+  return channels;
+}
+
+function rasterizePsdLayer(layer, index) {
+  if (layer.type === "adjustment") return null;
+  const layerCanvas = makeCanvas(state.doc.width, state.doc.height);
+  const layerCtx = layerCanvas.getContext("2d");
+  const clipBase = layer.clipped ? state.layers[index - 1] : null;
+  const source = effectiveLayerSource(layer, clipBase);
+  layerCtx.save();
+  drawLayerStyles(layerCtx, source, layer);
+  layerCtx.globalAlpha = layer.fillOpacity ?? 1;
+  layerCtx.drawImage(source, layer.x, layer.y);
+  layerCtx.restore();
+  return layerCanvas;
+}
+
+function psdLayerRecord(layerExport) {
+  const record = new PsdWriter();
+  record.i32(0);
+  record.i32(0);
+  record.i32(state.doc.height);
+  record.i32(state.doc.width);
+  record.u16(layerExport.channels.length);
+  layerExport.channels.forEach((channel) => {
+    record.i16(channel.id);
+    record.u32(channel.data.length);
+  });
+  record.ascii("8BIM");
+  record.ascii(psdBlendModeKey(layerExport.layer.blendMode));
+  record.u8(Math.round(clamp(layerExport.layer.opacity, 0, 1) * 255));
+  record.u8(0);
+  record.u8(layerExport.layer.visible ? 0 : 2);
+  record.u8(0);
+
+  const extra = new PsdWriter();
+  extra.u32(0);
+  extra.u32(0);
+  writePsdPascalString(extra, layerExport.layer.name);
+  record.u32(extra.length);
+  record.bytes(extra.toBytes());
+  return record.toBytes();
+}
+
+function encodeLayeredPsd(compositeCanvas) {
+  const channelCount = 4;
+  // state.layers is stored bottom-to-top; the layer panel reverses it only for display.
+  const layerExports = state.layers
+    .map((layer, index) => {
+      const canvas = rasterizePsdLayer(layer, index);
+      if (!canvas) return null;
+      const channelData = canvasToPsdChannelData(canvas);
+      return {
+        layer,
+        channels: [
+          { id: 0, data: channelData[0] },
+          { id: 1, data: channelData[1] },
+          { id: 2, data: channelData[2] },
+          { id: -1, data: channelData[3] },
+        ],
+      };
+    })
+    .filter(Boolean);
+
+  const layerInfo = new PsdWriter();
+  layerInfo.i16(layerExports.length);
+  layerExports.forEach((layerExport) => layerInfo.bytes(psdLayerRecord(layerExport)));
+  layerExports.forEach((layerExport) => {
+    layerExport.channels.forEach((channel) => layerInfo.bytes(channel.data));
+  });
+  if (layerInfo.length % 2) layerInfo.pad(1);
+
+  const layerAndMask = new PsdWriter();
+  layerAndMask.u32(layerInfo.length);
+  layerAndMask.bytes(layerInfo.toBytes());
+  layerAndMask.u32(0);
+  const layerAndMaskBytes = layerAndMask.toBytes();
+
+  const compositeChannels = canvasToPsdChannelData(compositeCanvas);
+  const writer = new PsdWriter();
+  writer.ascii("8BPS");
+  writer.u16(1);
+  writer.pad(6);
+  writer.u16(channelCount);
+  writer.u32(compositeCanvas.height);
+  writer.u32(compositeCanvas.width);
+  writer.u16(8);
+  writer.u16(3);
+  writer.u32(0);
+  writer.u32(0);
+  writer.u32(layerAndMaskBytes.length);
+  writer.bytes(layerAndMaskBytes);
+  writer.u16(0);
+  compositeChannels.forEach((channel) => writer.bytes(channel.subarray(2)));
+
+  return new Blob([writer.toBytes()], { type: "image/vnd.adobe.photoshop" });
+}
+
+function exportPsd() {
+  const output = composeDocument({ applyFilters: true });
+  const link = document.createElement("a");
+  const baseName = state.fileName.replace(/\.[^.]+$/, "") || "image";
+  const objectUrl = URL.createObjectURL(encodeLayeredPsd(output));
+  link.download = `${baseName}-edited.psd`;
+  link.href = objectUrl;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  updateStatus("PSD exported with editable raster layers");
+}
+
 function newDocument() {
   const size = promptDocumentSize("New Document");
   if (!size) return;
@@ -12814,6 +13027,7 @@ function executeCommand(command) {
     "place-embedded": () => placeInput.click(),
     "save-png": () => exportImage("image/png"),
     "save-jpg": () => exportImage("image/jpeg"),
+    "save-psd": exportPsd,
     "reset-document": resetDocument,
     undo,
     redo,
@@ -13031,6 +13245,7 @@ function wireEvents() {
   });
   buttons.savePng.addEventListener("click", () => exportImage("image/png"));
   buttons.saveJpg.addEventListener("click", () => exportImage("image/jpeg"));
+  buttons.savePsd.addEventListener("click", exportPsd);
   buttons.newAdjustmentLayer.addEventListener("click", addAdjustmentLayer);
   buttons.filterBlur.addEventListener("click", applyGaussianBlurFilter);
   buttons.filterBoxBlur.addEventListener("click", applyBoxBlurFilter);
