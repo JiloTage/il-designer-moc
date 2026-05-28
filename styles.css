@@ -453,6 +453,15 @@ input[type="range"] {
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.34);
 }
 
+.tool-flyout::before {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -8px;
+  width: 8px;
+  content: "";
+}
+
 .tool-group:hover .tool-flyout,
 .tool-group:focus-within .tool-flyout {
   display: grid;
