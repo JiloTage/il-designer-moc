@@ -37,6 +37,7 @@ const dom = {
   styleStatus: document.querySelector("#styleStatus"),
   channelStatus: document.querySelector("#channelStatus"),
   pathStatus: document.querySelector("#pathStatus"),
+  aiChatThread: document.querySelector("#aiChatThread"),
 };
 
 const navigatorCtx = dom.navigatorCanvas.getContext("2d");
@@ -103,6 +104,7 @@ const controls = {
   channelGreen: document.querySelector("#channelGreen"),
   channelBlue: document.querySelector("#channelBlue"),
   navigatorZoomSlider: document.querySelector("#navigatorZoomSlider"),
+  aiChatInput: document.querySelector("#aiChatInput"),
 };
 
 const values = {
@@ -247,6 +249,7 @@ const buttons = {
   makePathSelection: document.querySelector("#makePathSelectionButton"),
   strokePath: document.querySelector("#strokePathButton"),
   clearPath: document.querySelector("#clearPathButton"),
+  aiChatSend: document.querySelector("#aiChatSendButton"),
 };
 
 const toolInfo = {
@@ -305,7 +308,7 @@ const state = {
   drag: null,
   brushPreviewDoc: null,
   lastPaintDoc: null,
-  dockGroup: "core",
+  dockGroup: "ai",
   panelsHidden: false,
   chromeHidden: false,
   cropRect: null,
@@ -2658,6 +2661,25 @@ function updateStatus(message) {
   dom.zoomStatus.textContent = zoomPercentText();
   dom.docStatus.textContent = `${state.doc.width} x ${state.doc.height} px`;
   dom.toolStatus.textContent = message || `${state.freeTransform ? "Free Transform" : toolInfo[state.activeTool].name} on ${activeLayer()?.name || "No layer"}`;
+}
+
+function addAiChatMessage(text, className) {
+  const message = document.createElement("div");
+  message.className = `ai-message ${className}`;
+
+  const body = document.createElement("p");
+  body.textContent = text;
+
+  message.append(body);
+  dom.aiChatThread.append(message);
+  dom.aiChatThread.scrollTop = dom.aiChatThread.scrollHeight;
+}
+
+function sendAiChatMessage() {
+  const text = controls.aiChatInput.value.trim();
+  if (!text) return;
+  addAiChatMessage(text, "ai-message-user");
+  controls.aiChatInput.value = "";
 }
 
 function syncWorkspaceChrome() {
@@ -12985,6 +13007,12 @@ function wireEvents() {
   placeInput.addEventListener("change", async () => {
     await placeFile(placeInput.files[0]);
     placeInput.value = "";
+  });
+  buttons.aiChatSend.addEventListener("click", sendAiChatMessage);
+  controls.aiChatInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    sendAiChatMessage();
   });
   buttons.savePng.addEventListener("click", () => exportImage("image/png"));
   buttons.saveJpg.addEventListener("click", () => exportImage("image/jpeg"));

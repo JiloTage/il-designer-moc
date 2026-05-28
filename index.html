@@ -532,14 +532,71 @@
 
         <aside class="dock" aria-label="Panels">
           <div class="dock-tabs" aria-label="Panel groups">
-            <button class="dock-tab active" type="button" data-dock-tab="core">Core</button>
+            <button class="dock-tab" type="button" data-dock-tab="core">Core</button>
             <button class="dock-tab" type="button" data-dock-tab="tool">Tool</button>
             <button class="dock-tab" type="button" data-dock-tab="inspect">Inspect</button>
             <button class="dock-tab" type="button" data-dock-tab="effects">Effects</button>
             <button class="dock-tab" type="button" data-dock-tab="history">History</button>
+            <button class="dock-tab active" type="button" data-dock-tab="ai">AI</button>
           </div>
 
-          <section class="panel navigator-panel" data-dock-group="core" data-dock-panel="navigator">
+          <section class="panel ai-panel" data-dock-group="ai" data-dock-panel="ai-chat">
+            <div class="panel-heading">
+              <h2>AI Chat</h2>
+              <span>Copilot</span>
+            </div>
+            <div class="ai-chat-thread" id="aiChatThread" aria-label="AI chat messages"></div>
+            <div class="ai-chat-input">
+              <input id="aiChatInput" type="text" aria-label="AI chat prompt" />
+              <button class="panel-link" id="aiChatSendButton" type="button">Send</button>
+            </div>
+          </section>
+
+          <section class="panel ai-panel" data-dock-group="ai" data-dock-panel="ai-replace">
+            <div class="panel-heading">
+              <h2>文字の置換</h2>
+              <span>Replace</span>
+            </div>
+            <div class="ai-form">
+              <label>
+                <span>検索する文字</span>
+                <input type="text" />
+              </label>
+              <label>
+                <span>置換後の文字</span>
+                <input type="text" />
+              </label>
+              <button class="wide-command" type="button">Send</button>
+            </div>
+          </section>
+
+          <section class="panel ai-panel" data-dock-group="ai" data-dock-panel="ai-add-text">
+            <div class="panel-heading">
+              <h2>文字の追加</h2>
+              <span>Add Text</span>
+            </div>
+            <div class="ai-form">
+              <label>
+                <span>場所</span>
+                <select>
+                  <option></option>
+                </select>
+              </label>
+              <label>
+                <span>デザイン</span>
+                <select>
+                  <option></option>
+                </select>
+              </label>
+              <label>
+                <span>文言</span>
+                <textarea rows="3"></textarea>
+              </label>
+              <button class="wide-command" type="button">Send</button>
+            </div>
+          </section>
+
+          <section class="panel navigator-panel" data-dock-group="core" data-dock-panel="navigator" hidden>
             <div class="panel-heading">
               <h2>Navigator</h2>
               <span id="navigatorZoom">100%</span>
@@ -590,7 +647,7 @@
             </div>
           </section>
 
-          <section class="panel" data-dock-group="core" data-dock-panel="color">
+          <section class="panel" data-dock-group="core" data-dock-panel="color" hidden>
             <div class="panel-heading">
               <h2>Color</h2>
               <span id="colorValue">FG #f3d36b</span>
@@ -690,7 +747,7 @@
             </label>
           </section>
 
-          <section class="panel" data-dock-group="core" data-dock-panel="properties">
+          <section class="panel" data-dock-group="core" data-dock-panel="properties" hidden>
             <div class="panel-heading">
               <h2>Properties</h2>
               <div class="panel-actions">
@@ -865,7 +922,7 @@
             </div>
           </section>
 
-          <section class="panel layers-panel" data-dock-group="core" data-dock-panel="layers">
+          <section class="panel layers-panel" data-dock-group="core" data-dock-panel="layers" hidden>
             <div class="panel-heading">
               <h2>Layers</h2>
               <div class="panel-actions">
