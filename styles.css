@@ -688,6 +688,81 @@ input[type="range"] {
   border-left: 1px solid #090a0c;
 }
 
+.dock [hidden] {
+  display: none !important;
+}
+
+.dock-tabs {
+  display: grid;
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  order: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding-bottom: 2px;
+  background: #191c22;
+}
+
+.dock-tab {
+  min-height: 27px;
+  padding: 0 7px;
+  border: 1px solid #303846;
+  border-radius: 4px;
+  background: #15181e;
+  color: #aeb6c3;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.dock-tab:hover,
+.dock-tab.active {
+  border-color: #5ea1ff;
+  background: #263b59;
+  color: #ffffff;
+}
+
+.panel[data-dock-panel="layers"] {
+  order: 10;
+}
+
+.panel[data-dock-panel="properties"] {
+  order: 20;
+}
+
+.panel[data-dock-panel="color"] {
+  order: 30;
+}
+
+.panel[data-dock-panel="navigator"] {
+  order: 40;
+}
+
+.panel[data-dock-panel="brush-presets"],
+.panel[data-dock-panel="info"],
+.panel[data-dock-panel="layer-style"],
+.panel[data-dock-panel="history"] {
+  order: 10;
+}
+
+.panel[data-dock-panel="mask"],
+.panel[data-dock-panel="histogram"],
+.panel[data-dock-panel="filters"] {
+  order: 20;
+}
+
+.panel[data-dock-panel="selection"],
+.panel[data-dock-panel="channels"],
+.panel[data-dock-panel="transform"] {
+  order: 30;
+}
+
+.panel[data-dock-panel="paths"] {
+  order: 40;
+}
+
 .app.panels-hidden .workspace {
   grid-template-columns: 58px minmax(420px, 1fr);
 }
@@ -712,6 +787,7 @@ input[type="range"] {
 }
 
 .panel {
+  flex: 0 0 auto;
   border: 1px solid #090a0c;
   border-radius: 5px;
   background: #22262e;

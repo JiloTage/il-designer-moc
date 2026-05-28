@@ -305,6 +305,7 @@ const state = {
   drag: null,
   brushPreviewDoc: null,
   lastPaintDoc: null,
+  dockGroup: "core",
   panelsHidden: false,
   chromeHidden: false,
   cropRect: null,
@@ -2675,6 +2676,16 @@ function toggleWorkspaceChrome(panelsOnly = false) {
   syncWorkspaceChrome();
   render();
   updateStatus(state.chromeHidden ? "Tools and panels hidden" : state.panelsHidden ? "Panels hidden" : "Panels visible");
+}
+
+function selectDockGroup(group) {
+  state.dockGroup = group;
+  document.querySelectorAll("[data-dock-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.dockTab === group);
+  });
+  document.querySelectorAll("[data-dock-group]").forEach((panel) => {
+    panel.hidden = panel.dataset.dockGroup !== group;
+  });
 }
 
 function updateToolUi() {
@@ -13070,6 +13081,12 @@ function wireEvents() {
     selectTool(button.dataset.tool);
   });
 
+  document.querySelector(".dock-tabs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dock-tab]");
+    if (!button) return;
+    selectDockGroup(button.dataset.dockTab);
+  });
+
   document.querySelector("#swatches").addEventListener("click", (event) => {
     const button = event.target.closest("[data-color]");
     if (!button) return;
@@ -13579,6 +13596,7 @@ function init() {
   createSampleLayers();
   syncControlsFromState();
   wireEvents();
+  selectDockGroup(state.dockGroup);
   state.initialSnapshot = snapshot();
   commitHistory("New document");
   renderAll();

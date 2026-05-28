@@ -531,7 +531,15 @@
         </section>
 
         <aside class="dock" aria-label="Panels">
-          <section class="panel navigator-panel">
+          <div class="dock-tabs" aria-label="Panel groups">
+            <button class="dock-tab active" type="button" data-dock-tab="core">Core</button>
+            <button class="dock-tab" type="button" data-dock-tab="tool">Tool</button>
+            <button class="dock-tab" type="button" data-dock-tab="inspect">Inspect</button>
+            <button class="dock-tab" type="button" data-dock-tab="effects">Effects</button>
+            <button class="dock-tab" type="button" data-dock-tab="history">History</button>
+          </div>
+
+          <section class="panel navigator-panel" data-dock-group="core" data-dock-panel="navigator">
             <div class="panel-heading">
               <h2>Navigator</h2>
               <span id="navigatorZoom">100%</span>
@@ -544,7 +552,7 @@
             </div>
           </section>
 
-          <section class="panel histogram-panel">
+          <section class="panel histogram-panel" data-dock-group="inspect" data-dock-panel="histogram" hidden>
             <div class="panel-heading">
               <h2>Histogram</h2>
               <span id="histogramStatus">RGB</span>
@@ -552,7 +560,7 @@
             <canvas id="histogramCanvas" width="260" height="96"></canvas>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="inspect" data-dock-panel="info" hidden>
             <div class="panel-heading">
               <h2>Info</h2>
               <span id="infoHex">--</span>
@@ -582,7 +590,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="core" data-dock-panel="color">
             <div class="panel-heading">
               <h2>Color</h2>
               <span id="colorValue">FG #f3d36b</span>
@@ -609,7 +617,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="inspect" data-dock-panel="channels" hidden>
             <div class="panel-heading">
               <h2>Channels</h2>
               <span id="channelStatus">RGB</span>
@@ -638,7 +646,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="tool" data-dock-panel="brush-presets" hidden>
             <div class="panel-heading">
               <h2>Brush Presets</h2>
               <span id="brushPresetName">Hard Round</span>
@@ -682,7 +690,7 @@
             </label>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="core" data-dock-panel="properties">
             <div class="panel-heading">
               <h2>Properties</h2>
               <div class="panel-actions">
@@ -723,7 +731,7 @@
             </label>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="effects" data-dock-panel="filters" hidden>
             <div class="panel-heading">
               <h2>Filters</h2>
             </div>
@@ -780,7 +788,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="effects" data-dock-panel="transform" hidden>
             <div class="panel-heading">
               <h2>Transform</h2>
             </div>
@@ -799,7 +807,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="effects" data-dock-panel="layer-style" hidden>
             <div class="panel-heading">
               <h2>Layer Style</h2>
               <div class="panel-actions">
@@ -857,7 +865,7 @@
             </div>
           </section>
 
-          <section class="panel layers-panel">
+          <section class="panel layers-panel" data-dock-group="core" data-dock-panel="layers">
             <div class="panel-heading">
               <h2>Layers</h2>
               <div class="panel-actions">
@@ -942,7 +950,7 @@
             <button class="wide-command" id="mergeVisibleButton" type="button">Merge Visible</button>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="tool" data-dock-panel="mask" hidden>
             <div class="panel-heading">
               <h2>Mask</h2>
               <span id="maskStatus">No mask</span>
@@ -957,7 +965,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="tool" data-dock-panel="selection" hidden>
             <div class="panel-heading">
               <h2>Selection</h2>
               <span id="selectionStatus">None</span>
@@ -990,7 +998,7 @@
             </label>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-dock-group="tool" data-dock-panel="paths" hidden>
             <div class="panel-heading">
               <h2>Paths</h2>
               <span id="pathStatus">No path</span>
@@ -1002,7 +1010,7 @@
             </div>
           </section>
 
-          <section class="panel history-panel">
+          <section class="panel history-panel" data-dock-group="history" data-dock-panel="history" hidden>
             <div class="panel-heading">
               <h2>History</h2>
               <div class="panel-actions">
