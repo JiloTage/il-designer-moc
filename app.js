@@ -3970,6 +3970,28 @@ function drawQuickMaskStroke(from, to, erase) {
   return true;
 }
 
+function replaceSelectedTargetPixels(target, edited, selectionLocal) {
+  const patch = cloneCanvas(edited);
+  const patchCtx = patch.getContext("2d");
+  patchCtx.globalCompositeOperation = "destination-in";
+  patchCtx.drawImage(selectionLocal, 0, 0);
+
+  const targetCtx = target.getContext("2d");
+  targetCtx.save();
+  targetCtx.globalCompositeOperation = "destination-out";
+  targetCtx.drawImage(selectionLocal, 0, 0);
+  targetCtx.restore();
+  targetCtx.drawImage(patch, 0, 0);
+}
+
+function editTargetWithinSelection(target, layer, edit) {
+  const selectionLocal = selectionBounds() ? localSelectionMask(target, layer) : null;
+  const editable = selectionLocal ? cloneCanvas(target) : target;
+  const result = edit(editable);
+  if (selectionLocal && result) replaceSelectedTargetPixels(target, editable, selectionLocal);
+  return result;
+}
+
 function drawStroke(from, to, erase) {
   if (state.quickMaskMode) return drawQuickMaskStroke(from, to, erase);
   const layer = activeLayer();
@@ -3977,7 +3999,6 @@ function drawStroke(from, to, erase) {
   if (guardPixelEditing(layer)) return false;
   const target = state.paintTarget === "mask" && layer.mask ? layer.mask : layer.canvas;
   if (erase && guardTransparencyEditing(layer, target)) return false;
-  const layerCtx = target.getContext("2d");
   const start = { x: from.x - layer.x, y: from.y - layer.y };
   const end = { x: to.x - layer.x, y: to.y - layer.y };
   const distance = Math.hypot(end.x - start.x, end.y - start.y);
@@ -3985,11 +4006,14 @@ function drawStroke(from, to, erase) {
   const steps = Math.max(1, Math.ceil(distance / spacing));
 
   return preserveLockedTransparency(layer, target, () => {
-    for (let i = 0; i <= steps; i += 1) {
-      const t = i / steps;
-      drawBrushStamp(layerCtx, start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t, erase);
-    }
-    return true;
+    return editTargetWithinSelection(target, layer, (editable) => {
+      const layerCtx = editable.getContext("2d");
+      for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps;
+        drawBrushStamp(layerCtx, start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t, erase);
+      }
+      return true;
+    });
   });
 }
 
@@ -4015,7 +4039,6 @@ function drawCloneStroke(from, to, cloneDrag) {
   const layer = activeLayer();
   if (!layer || !layer.visible) return false;
   if (guardPixelEditing(layer, true)) return false;
-  const layerCtx = layer.canvas.getContext("2d");
   const start = { x: from.x - layer.x, y: from.y - layer.y };
   const end = { x: to.x - layer.x, y: to.y - layer.y };
   const distance = Math.hypot(end.x - start.x, end.y - start.y);
@@ -4023,18 +4046,21 @@ function drawCloneStroke(from, to, cloneDrag) {
   const steps = Math.max(1, Math.ceil(distance / spacing));
 
   return preserveLockedTransparency(layer, layer.canvas, () => {
-    for (let i = 0; i <= steps; i += 1) {
-      const t = i / steps;
-      const docPoint = {
-        x: from.x + (to.x - from.x) * t,
-        y: from.y + (to.y - from.y) * t,
-      };
-      drawCloneStamp(layerCtx, {
-        x: start.x + (end.x - start.x) * t,
-        y: start.y + (end.y - start.y) * t,
-      }, docPoint, cloneDrag);
-    }
-    return true;
+    return editTargetWithinSelection(layer.canvas, layer, (editable) => {
+      const layerCtx = editable.getContext("2d");
+      for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps;
+        const docPoint = {
+          x: from.x + (to.x - from.x) * t,
+          y: from.y + (to.y - from.y) * t,
+        };
+        drawCloneStamp(layerCtx, {
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t,
+        }, docPoint, cloneDrag);
+      }
+      return true;
+    });
   });
 }
 
@@ -4260,14 +4286,17 @@ function placeText(docPoint) {
   const layer = activeLayer();
   if (!layer || !layer.visible) return;
   if (guardPixelEditing(layer)) return;
-  const layerCtx = layer.canvas.getContext("2d");
   preserveLockedTransparency(layer, layer.canvas, () => {
-    layerCtx.save();
-    layerCtx.fillStyle = state.brush.color;
-    layerCtx.font = `800 ${state.text.size}px Georgia, Cambria, serif`;
-    layerCtx.textBaseline = "alphabetic";
-    layerCtx.fillText(state.text.content || "Text", docPoint.x - layer.x, docPoint.y - layer.y);
-    layerCtx.restore();
+    return editTargetWithinSelection(layer.canvas, layer, (editable) => {
+      const layerCtx = editable.getContext("2d");
+      layerCtx.save();
+      layerCtx.fillStyle = state.brush.color;
+      layerCtx.font = `800 ${state.text.size}px Georgia, Cambria, serif`;
+      layerCtx.textBaseline = "alphabetic";
+      layerCtx.fillText(state.text.content || "Text", docPoint.x - layer.x, docPoint.y - layer.y);
+      layerCtx.restore();
+      return true;
+    });
   });
   commitHistory("Add text");
   renderAll();
