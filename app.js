@@ -13483,6 +13483,751 @@ function endPointer() {
   if (zoomStatusText) updateStatus(zoomStatusText);
 }
 
+let activeCommandDialog = null;
+
+const fillRoleOptions = [
+  { value: "foreground", label: "Foreground" },
+  { value: "background", label: "Background" },
+  { value: "black", label: "Black" },
+  { value: "white", label: "White" },
+  { value: "gray", label: "50% Gray" },
+];
+
+const edgeOptions = [
+  { value: "lower", label: "Lower" },
+  { value: "upper", label: "Upper" },
+];
+
+function numberDialogField(name, label, value, min, max, step = 1, unit = "", integer = false) {
+  return { type: "number", name, label, value, min, max, step, unit, integer };
+}
+
+function selectDialogField(name, label, value, options) {
+  return { type: "select", name, label, value, options };
+}
+
+function checkboxDialogField(name, label, value) {
+  return { type: "checkbox", name, label, value };
+}
+
+function textDialogField(name, label, value) {
+  return { type: "text", name, label, value };
+}
+
+function restoreCanvasFromSnapshot(target, source) {
+  const targetCtx = target.getContext("2d");
+  targetCtx.clearRect(0, 0, target.width, target.height);
+  targetCtx.drawImage(source, 0, 0);
+}
+
+function resolveDialogValue(value) {
+  return typeof value === "function" ? value() : value;
+}
+
+function resolveDialogFields(fields) {
+  return resolveDialogValue(fields).map((field) => ({
+    ...field,
+    value: resolveDialogValue(field.value),
+    options: resolveDialogValue(field.options),
+  }));
+}
+
+function dialogFieldOutputText(value, unit) {
+  return `${value}${unit ? ` ${unit}` : ""}`;
+}
+
+function readCommandDialogValues(fields, controlsByName) {
+  const dialogValues = {};
+  for (const field of fields) {
+    const control = controlsByName[field.name];
+    if (field.type === "number") {
+      const rawValue = control.number.value.trim();
+      if (!rawValue) return { error: `${field.label} is required` };
+      const number = Number(rawValue);
+      if (!Number.isFinite(number)) return { error: `${field.label} must be a number` };
+      const rounded = field.integer ? Math.round(number) : number;
+      dialogValues[field.name] = clamp(rounded, field.min, field.max);
+      continue;
+    }
+    if (field.type === "checkbox") {
+      dialogValues[field.name] = control.input.checked;
+      continue;
+    }
+    dialogValues[field.name] = control.input.value;
+  }
+  return { values: dialogValues };
+}
+
+function openCommandDialog(config) {
+  if (activeCommandDialog) activeCommandDialog.close();
+
+  const fields = resolveDialogFields(config.fields);
+  const overlay = document.createElement("div");
+  overlay.className = "command-dialog-backdrop";
+
+  const dialog = document.createElement("form");
+  dialog.className = "command-dialog-window";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", config.title);
+
+  const header = document.createElement("div");
+  header.className = "command-dialog-header";
+  const title = document.createElement("h2");
+  title.textContent = config.title;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "command-dialog-close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "x";
+  header.append(title, closeButton);
+
+  const body = document.createElement("div");
+  body.className = "command-dialog-body";
+  const controlsByName = {};
+
+  const clampDialogPosition = (left, top) => {
+    const rect = dialog.getBoundingClientRect();
+    const padding = 8;
+    return {
+      left: clamp(left, padding, Math.max(padding, window.innerWidth - rect.width - padding)),
+      top: clamp(top, padding, Math.max(padding, window.innerHeight - rect.height - padding)),
+    };
+  };
+
+  const positionDialog = (left, top) => {
+    const position = clampDialogPosition(left, top);
+    dialog.style.left = `${position.left}px`;
+    dialog.style.top = `${position.top}px`;
+  };
+
+  let previewFrame = 0;
+  const scheduleCommandDialogPreview = () => {
+    if (!config.preview) return;
+    if (previewFrame) cancelAnimationFrame(previewFrame);
+    previewFrame = requestAnimationFrame(() => {
+      previewFrame = 0;
+      if (!previewToggle.checked) {
+        config.preview.reset();
+        return;
+      }
+      const valuesResult = validatedDialogValues(true);
+      if (!valuesResult) {
+        config.preview.reset();
+        return;
+      }
+      config.preview.apply(valuesResult);
+    });
+  };
+
+  fields.forEach((field) => {
+    const row = document.createElement("label");
+    row.className = `command-dialog-field command-dialog-field-${field.type}`;
+
+    const fieldHeader = document.createElement("span");
+    fieldHeader.className = "command-dialog-field-header";
+    const fieldLabel = document.createElement("span");
+    fieldLabel.textContent = field.label;
+    fieldHeader.append(fieldLabel);
+
+    if (field.type === "number") {
+      const output = document.createElement("output");
+      output.textContent = dialogFieldOutputText(field.value, field.unit);
+      fieldHeader.append(output);
+
+      const range = document.createElement("input");
+      range.type = "range";
+      range.min = String(field.min);
+      range.max = String(field.max);
+      range.step = String(field.step);
+      range.value = String(field.value);
+
+      const number = document.createElement("input");
+      number.type = "number";
+      number.min = String(field.min);
+      number.max = String(field.max);
+      number.step = String(field.step);
+      number.value = String(field.value);
+
+      const syncNumericValue = (value, clampNow = true) => {
+        if (String(value).trim() === "") return;
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return;
+        const rounded = field.integer ? Math.round(parsed) : parsed;
+        const nextValue = clampNow ? clamp(rounded, field.min, field.max) : rounded;
+        range.value = String(nextValue);
+        number.value = String(nextValue);
+        output.textContent = dialogFieldOutputText(nextValue, field.unit);
+      };
+
+      range.addEventListener("input", () => {
+        syncNumericValue(range.value);
+        scheduleCommandDialogPreview();
+      });
+      number.addEventListener("input", () => {
+        syncNumericValue(number.value, false);
+        scheduleCommandDialogPreview();
+      });
+      number.addEventListener("change", () => {
+        syncNumericValue(number.value);
+      });
+
+      row.append(fieldHeader, range, number);
+      controlsByName[field.name] = { field, range, number };
+      body.append(row);
+      return;
+    }
+
+    const input = document.createElement(field.type === "select" ? "select" : "input");
+    if (field.type === "text") {
+      input.type = "text";
+      input.value = field.value;
+      input.addEventListener("input", scheduleCommandDialogPreview);
+    }
+    if (field.type === "checkbox") {
+      input.type = "checkbox";
+      input.checked = Boolean(field.value);
+      input.addEventListener("change", scheduleCommandDialogPreview);
+    }
+    if (field.type === "select") {
+      field.options.forEach((option) => {
+        const optionNode = document.createElement("option");
+        optionNode.value = option.value;
+        optionNode.textContent = option.label;
+        input.append(optionNode);
+      });
+      input.value = field.value;
+      input.addEventListener("change", scheduleCommandDialogPreview);
+    }
+
+    row.append(fieldHeader, input);
+    controlsByName[field.name] = { field, input };
+    body.append(row);
+  });
+
+  const error = document.createElement("p");
+  error.className = "command-dialog-error";
+  error.setAttribute("role", "alert");
+
+  const footer = document.createElement("div");
+  footer.className = "command-dialog-footer";
+  let previewToggle = null;
+  if (config.preview) {
+    const previewLabel = document.createElement("label");
+    previewLabel.className = "command-dialog-preview";
+    previewToggle = document.createElement("input");
+    previewToggle.type = "checkbox";
+    previewToggle.checked = false;
+    previewToggle.addEventListener("change", () => {
+      if (previewToggle.checked) scheduleCommandDialogPreview();
+      else config.preview.reset();
+    });
+    previewLabel.append(previewToggle, document.createTextNode("Preview"));
+    footer.append(previewLabel);
+  }
+
+  const actionGroup = document.createElement("div");
+  actionGroup.className = "command-dialog-actions";
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "command-dialog-button";
+  cancelButton.textContent = "Cancel";
+  const sendButton = document.createElement("button");
+  sendButton.type = "submit";
+  sendButton.className = "command-dialog-button command-dialog-send";
+  sendButton.textContent = "Send";
+  actionGroup.append(cancelButton, sendButton);
+  footer.append(actionGroup);
+
+  dialog.append(header, body, error, footer);
+  overlay.append(dialog);
+  document.body.append(overlay);
+
+  let closed = false;
+
+  function showError(message = "") {
+    error.textContent = message;
+    dialog.classList.toggle("has-error", Boolean(message));
+  }
+
+  function validatedDialogValues(forPreview = false) {
+    const result = readCommandDialogValues(fields, controlsByName);
+    if (result.error) {
+      if (!forPreview) showError(result.error);
+      return null;
+    }
+    const validation = config.validate?.(result.values);
+    if (validation) {
+      if (!forPreview) showError(validation);
+      return null;
+    }
+    showError("");
+    return result.values;
+  }
+
+  function closeDialog(resetPreview = true) {
+    if (closed) return;
+    closed = true;
+    if (previewFrame) cancelAnimationFrame(previewFrame);
+    if (resetPreview && config.preview) config.preview.reset();
+    window.removeEventListener("mousemove", handleMouseMoveDialogDrag);
+    window.removeEventListener("mouseup", handleMouseUpDialogDrag);
+    overlay.remove();
+    activeCommandDialog = null;
+  }
+
+  function sendDialog() {
+    const valuesResult = validatedDialogValues(false);
+    if (!valuesResult) return;
+    if (config.preview) config.preview.reset();
+    closeDialog(false);
+    config.onSend(valuesResult);
+  }
+
+  closeButton.addEventListener("click", () => closeDialog());
+  cancelButton.addEventListener("click", () => closeDialog());
+  overlay.addEventListener("pointerdown", (event) => {
+    if (event.target === overlay) closeDialog();
+  });
+  dialog.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendDialog();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog();
+    }
+  });
+
+  activeCommandDialog = { close: closeDialog };
+  const initialRect = dialog.getBoundingClientRect();
+  positionDialog((window.innerWidth - initialRect.width) / 2, (window.innerHeight - initialRect.height) / 2);
+
+  let dragState = null;
+  const beginDialogDrag = (event, source) => {
+    if (event.target.closest("button")) return;
+    if (source === "mouse" && event.button !== 0) return;
+    const rect = dialog.getBoundingClientRect();
+    dragState = {
+      source,
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    if (source === "pointer") header.setPointerCapture(event.pointerId);
+    dialog.classList.add("command-dialog-dragging");
+    event.preventDefault();
+  };
+  const moveDialogDrag = (event, source) => {
+    if (!dragState || dragState.source !== source) return;
+    if (source === "pointer" && dragState.pointerId !== event.pointerId) return;
+    positionDialog(event.clientX - dragState.offsetX, event.clientY - dragState.offsetY);
+  };
+  const endDialogDrag = (event, source) => {
+    if (!dragState || dragState.source !== source) return;
+    if (source === "pointer" && dragState.pointerId !== event.pointerId) return;
+    dragState = null;
+    dialog.classList.remove("command-dialog-dragging");
+  };
+  header.addEventListener("pointerdown", (event) => {
+    beginDialogDrag(event, "pointer");
+  });
+  header.addEventListener("pointermove", (event) => {
+    moveDialogDrag(event, "pointer");
+  });
+  header.addEventListener("pointerup", (event) => endDialogDrag(event, "pointer"));
+  header.addEventListener("pointercancel", (event) => endDialogDrag(event, "pointer"));
+  header.addEventListener("mousedown", (event) => {
+    if (dragState) return;
+    beginDialogDrag(event, "mouse");
+  });
+  const handleMouseMoveDialogDrag = (event) => {
+    moveDialogDrag(event, "mouse");
+  };
+  const handleMouseUpDialogDrag = (event) => {
+    endDialogDrag(event, "mouse");
+  };
+  window.addEventListener("mousemove", handleMouseMoveDialogDrag);
+  window.addEventListener("mouseup", handleMouseUpDialogDrag);
+
+  const firstInput = dialog.querySelector("input:not([type='checkbox']), select");
+  firstInput?.focus();
+  if (firstInput instanceof HTMLInputElement && firstInput.type !== "range") firstInput.select();
+}
+
+function restoreSelectionDialogState(selection) {
+  if (selection) restoreSelectionState(selection);
+  else clearSelectionState();
+  controls.selectionFeather.value = state.selectionFeather;
+  values.selectionFeather.textContent = `${state.selectionFeather} px`;
+  updateToolUi();
+  render();
+}
+
+function createSelectionDialogPreview(applyPreview) {
+  const selection = currentSelectionState();
+  return {
+    apply(dialogValues) {
+      restoreSelectionDialogState(selection);
+      applyPreview(dialogValues);
+    },
+    reset() {
+      restoreSelectionDialogState(selection);
+    },
+  };
+}
+
+function createColorRangeDialogPreview() {
+  const selection = currentSelectionState();
+  const tolerance = state.wandTolerance;
+  return {
+    apply(dialogValues) {
+      restoreSelectionDialogState(selection);
+      setWandTolerance(dialogValues.tolerance);
+      selectColorRange(dialogValues.tolerance);
+      updateStatus(`Color Range preview at ${state.wandTolerance}`);
+    },
+    reset() {
+      restoreSelectionDialogState(selection);
+      setWandTolerance(tolerance);
+    },
+  };
+}
+
+function applyStrokeSelectionToTarget(layer, target, width, role) {
+  const strokeMask = selectionStrokeMask(width);
+  if (!strokeMask) return false;
+  const local = localDocumentMask(strokeMask, target, layer);
+  const isMask = target === layer.mask;
+  const color = fillColorForRole(role);
+  const fill = makeCanvas(target.width, target.height);
+  const fillCtx = fill.getContext("2d");
+  fillCtx.globalAlpha = isMask ? maskAlphaForColor(color) : state.brush.opacity;
+  fillCtx.fillStyle = isMask ? "#ffffff" : color;
+  fillCtx.fillRect(0, 0, fill.width, fill.height);
+  fillCtx.globalAlpha = 1;
+  fillCtx.globalCompositeOperation = "destination-in";
+  fillCtx.drawImage(local, 0, 0);
+
+  const targetCtx = target.getContext("2d");
+  preserveLockedTransparency(layer, target, () => {
+    if (isMask) {
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = "destination-out";
+      targetCtx.drawImage(local, 0, 0);
+      targetCtx.restore();
+    }
+    targetCtx.drawImage(fill, 0, 0);
+  });
+  return true;
+}
+
+function createStrokeDialogPreview() {
+  const layer = activeLayer();
+  if (!layer || !layer.visible) return null;
+  const target = state.paintTarget === "mask" && layer.mask ? layer.mask : layer.canvas;
+  if (guardPixelEditing(layer, target === layer.canvas)) return false;
+  const original = cloneCanvas(target);
+  return {
+    apply(dialogValues) {
+      restoreCanvasFromSnapshot(target, original);
+      const width = Math.min(Math.round(dialogValues.width), 128);
+      const applied = applyStrokeSelectionToTarget(layer, target, width, dialogValues.role);
+      render();
+      updateStatus(applied ? `Stroke ${width}px preview` : "No selection to stroke");
+    },
+    reset() {
+      restoreCanvasFromSnapshot(target, original);
+      render();
+    },
+  };
+}
+
+function createLayerProcessorDialogPreview(spec) {
+  const layer = activeLayer();
+  if (!layer) return null;
+  if (layer.type === "adjustment") {
+    updateStatus(`Select a pixel layer for ${spec.title}`);
+    return false;
+  }
+  const target = state.paintTarget === "mask" && layer.mask ? layer.mask : layer.canvas;
+  if (guardPixelEditing(layer, target === layer.canvas)) return false;
+  const original = cloneCanvas(target);
+  const useAlpha = target === layer.mask;
+  return {
+    apply(dialogValues) {
+      restoreCanvasFromSnapshot(target, original);
+      const filtered = spec.layerProcessor(original, dialogValues, useAlpha);
+      if (!filtered) {
+        render();
+        updateStatus(`${spec.title} unchanged`);
+        return;
+      }
+      const scope = preserveLockedTransparency(layer, target, () => replaceFilteredTarget(target, layer, filtered));
+      render();
+      updateStatus(scope ? `${spec.title} preview` : "Selection is empty");
+    },
+    reset() {
+      restoreCanvasFromSnapshot(target, original);
+      render();
+    },
+  };
+}
+
+function createMenuCommandDialogPreview(spec) {
+  if (spec.layerProcessor) return createLayerProcessorDialogPreview(spec);
+  if (spec.selectionPreview) return createSelectionDialogPreview(spec.selectionPreview);
+  if (spec.colorRangePreview) return createColorRangeDialogPreview();
+  if (spec.strokePreview) return createStrokeDialogPreview();
+  return null;
+}
+
+function documentSizeDialog(title) {
+  return {
+    title,
+    fields: () => [
+      numberDialogField("width", "Width", state.doc.width, 1, 8192, 1, "px", true),
+      numberDialogField("height", "Height", state.doc.height, 1, 8192, 1, "px", true),
+    ],
+    serialize: (dialogValues) => `${dialogValues.width} x ${dialogValues.height}`,
+  };
+}
+
+function singleValueLayerDialog(title, field, processor) {
+  return {
+    title,
+    fields: [field],
+    layerProcessor: processor,
+    serialize: (dialogValues) => String(dialogValues[field.name]),
+  };
+}
+
+function layerOptionsDialog(title, fields, processor, serialize, validate = null) {
+  return { title, fields, layerProcessor: processor, serialize, validate };
+}
+
+const menuCommandDialogs = {
+  "new-document": documentSizeDialog("New Document"),
+  "fill-dialog": {
+    title: "Fill",
+    fields: [selectDialogField("role", "Contents", "foreground", fillRoleOptions)],
+    serialize: (dialogValues) => dialogValues.role,
+  },
+  "stroke-selection": {
+    title: "Stroke",
+    fields: [
+      numberDialogField("width", "Width", 8, 1, 128, 1, "px", true),
+      selectDialogField("role", "Fill", "foreground", fillRoleOptions),
+    ],
+    strokePreview: true,
+    serialize: (dialogValues) => `${dialogValues.width} ${dialogValues.role}`,
+  },
+  "image-size": documentSizeDialog("Image Size"),
+  "canvas-size": documentSizeDialog("Canvas Size"),
+  levels: layerOptionsDialog(
+    "Levels",
+    [
+      numberDialogField("black", "Black Input", 0, 0, 254, 1, "", true),
+      numberDialogField("gamma", "Gamma", 1, 0.1, 9.99, 0.01),
+      numberDialogField("white", "White Input", 255, 1, 255, 1, "", true),
+    ],
+    (source, dialogValues, useAlpha) => levelsCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.black} ${dialogValues.gamma} ${dialogValues.white}`,
+    (dialogValues) => (dialogValues.black >= dialogValues.white ? "Black input must be below white input" : null),
+  ),
+  curves: layerOptionsDialog(
+    "Curves",
+    [
+      numberDialogField("shadow", "Shadow Output", 0, 0, 255, 1, "", true),
+      numberDialogField("midtone", "Midtone Output", 160, 0, 255, 1, "", true),
+      numberDialogField("highlight", "Highlight Output", 255, 0, 255, 1, "", true),
+    ],
+    (source, dialogValues, useAlpha) => curvesCanvas(source, [
+      { x: 0, y: dialogValues.shadow },
+      { x: 128, y: dialogValues.midtone },
+      { x: 255, y: dialogValues.highlight },
+    ], useAlpha),
+    (dialogValues) => `0:${dialogValues.shadow} 128:${dialogValues.midtone} 255:${dialogValues.highlight}`,
+  ),
+  "black-white": layerOptionsDialog(
+    "Black & White",
+    [
+      numberDialogField("red", "Red Weight", 30, 0, 200, 1, "", true),
+      numberDialogField("green", "Green Weight", 59, 0, 200, 1, "", true),
+      numberDialogField("blue", "Blue Weight", 11, 0, 200, 1, "", true),
+    ],
+    (source, dialogValues, useAlpha) => blackWhiteCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.red} ${dialogValues.green} ${dialogValues.blue}`,
+  ),
+  "hue-saturation": layerOptionsDialog(
+    "Hue/Saturation",
+    [
+      numberDialogField("hue", "Hue", 0, -180, 180, 1, "deg", true),
+      numberDialogField("saturation", "Saturation", 20, -100, 100, 1, "%", true),
+      numberDialogField("lightness", "Lightness", 0, -100, 100, 1, "%", true),
+    ],
+    (source, dialogValues, useAlpha) => hueSaturationCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.hue} ${dialogValues.saturation} ${dialogValues.lightness}`,
+  ),
+  vibrance: layerOptionsDialog(
+    "Vibrance",
+    [
+      numberDialogField("vibrance", "Vibrance", 35, -100, 100, 1, "%", true),
+      numberDialogField("saturation", "Saturation", 0, -100, 100, 1, "%", true),
+    ],
+    (source, dialogValues, useAlpha) => vibranceCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.vibrance} ${dialogValues.saturation}`,
+  ),
+  "color-balance": layerOptionsDialog(
+    "Color Balance",
+    [
+      numberDialogField("cyanRed", "Cyan / Red", 15, -100, 100, 1, "", true),
+      numberDialogField("magentaGreen", "Magenta / Green", 0, -100, 100, 1, "", true),
+      numberDialogField("yellowBlue", "Yellow / Blue", -10, -100, 100, 1, "", true),
+    ],
+    (source, dialogValues, useAlpha) => colorBalanceCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.cyanRed} ${dialogValues.magentaGreen} ${dialogValues.yellowBlue}`,
+  ),
+  exposure: layerOptionsDialog(
+    "Exposure",
+    [
+      numberDialogField("exposure", "Exposure", 1, -5, 5, 0.01),
+      numberDialogField("offset", "Offset", 0, -1, 1, 0.01),
+      numberDialogField("gamma", "Gamma", 1, 0.1, 9.99, 0.01),
+    ],
+    (source, dialogValues, useAlpha) => exposureCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.exposure} ${dialogValues.offset} ${dialogValues.gamma}`,
+  ),
+  "shadows-highlights": layerOptionsDialog(
+    "Shadows/Highlights",
+    [
+      numberDialogField("shadows", "Shadows", 35, 0, 100, 1, "%", true),
+      numberDialogField("highlights", "Highlights", 20, 0, 100, 1, "%", true),
+    ],
+    (source, dialogValues, useAlpha) => shadowsHighlightsCanvas(source, dialogValues, useAlpha),
+    (dialogValues) => `${dialogValues.shadows} ${dialogValues.highlights}`,
+  ),
+  threshold: singleValueLayerDialog("Threshold", numberDialogField("threshold", "Level", 128, 0, 255, 1, "", true), (source, dialogValues, useAlpha) => thresholdCanvas(source, dialogValues.threshold, useAlpha)),
+  posterize: singleValueLayerDialog("Posterize", numberDialogField("levels", "Levels", 4, 2, 255, 1, "", true), (source, dialogValues, useAlpha) => posterizeCanvas(source, dialogValues.levels, useAlpha)),
+  "filter-blur": singleValueLayerDialog("Gaussian Blur", numberDialogField("radius", "Radius", 4, 0.1, 100, 0.1, "px"), (source, dialogValues, useAlpha) => gaussianBlurCanvas(source, dialogValues.radius, useAlpha)),
+  "filter-box-blur": singleValueLayerDialog("Box Blur", numberDialogField("radius", "Radius", 6, 0.1, 100, 0.1, "px"), (source, dialogValues, useAlpha) => boxBlurFilterCanvas(source, dialogValues.radius, useAlpha)),
+  "filter-surface-blur": layerOptionsDialog("Surface Blur", [numberDialogField("radius", "Radius", 3, 1, 20, 1, "px", true), numberDialogField("threshold", "Threshold", 20, 0, 255, 1)], (source, dialogValues, useAlpha) => surfaceBlurCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.radius} ${dialogValues.threshold}`),
+  "filter-smart-blur": layerOptionsDialog("Smart Blur", [numberDialogField("radius", "Radius", 4, 1, 20, 1, "px", true), numberDialogField("threshold", "Threshold", 24, 0, 255, 1), numberDialogField("quality", "Quality", 2, 1, 3, 1, "", true)], (source, dialogValues, useAlpha) => smartBlurCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.radius} ${dialogValues.threshold} ${dialogValues.quality}`),
+  "filter-radial-blur": singleValueLayerDialog("Radial Blur", numberDialogField("amount", "Amount", 35, 0, 100, 1, "%"), (source, dialogValues, useAlpha) => radialBlurCanvas(source, dialogValues.amount, useAlpha)),
+  "filter-twirl": singleValueLayerDialog("Twirl", numberDialogField("angle", "Angle", 120, -999, 999, 1, "deg"), (source, dialogValues, useAlpha) => twirlCanvas(source, dialogValues.angle, useAlpha)),
+  "filter-pinch": singleValueLayerDialog("Pinch", numberDialogField("amount", "Amount", 50, -100, 100, 1, "%"), (source, dialogValues, useAlpha) => pinchCanvas(source, dialogValues.amount, useAlpha)),
+  "filter-ripple": layerOptionsDialog("Ripple", [numberDialogField("amount", "Amount", 30, -100, 100, 1), numberDialogField("wavelength", "Wavelength", 16, 2, 256, 1, "px")], (source, dialogValues, useAlpha) => rippleCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.amount} ${dialogValues.wavelength}`),
+  "filter-spherize": singleValueLayerDialog("Spherize", numberDialogField("amount", "Amount", 50, -100, 100, 1, "%"), (source, dialogValues, useAlpha) => spherizeCanvas(source, dialogValues.amount, useAlpha)),
+  "filter-zigzag": layerOptionsDialog("ZigZag", [numberDialogField("amount", "Amount", 40, -100, 100, 1), numberDialogField("ridges", "Ridges", 6, 1, 32, 1, "", true)], (source, dialogValues, useAlpha) => zigZagCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.amount} ${dialogValues.ridges}`),
+  "filter-wave": layerOptionsDialog("Wave", [numberDialogField("xAmplitude", "X Amplitude", 8, -128, 128, 1, "px"), numberDialogField("yAmplitude", "Y Amplitude", 4, -128, 128, 1, "px"), numberDialogField("wavelength", "Wavelength", 24, 2, 512, 1, "px")], (source, dialogValues, useAlpha) => waveCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.xAmplitude} ${dialogValues.yAmplitude} ${dialogValues.wavelength}`),
+  "filter-polar-coordinates": layerOptionsDialog("Polar Coordinates", [selectDialogField("mode", "Mode", "rect", [{ value: "rect", label: "Rect to Polar" }, { value: "polar", label: "Polar to Rect" }])], (source, dialogValues, useAlpha) => polarCoordinatesCanvas(source, dialogValues.mode, useAlpha), (dialogValues) => dialogValues.mode),
+  "filter-shear": singleValueLayerDialog("Shear", numberDialogField("amount", "Amount", 35, -100, 100, 1), (source, dialogValues, useAlpha) => shearCanvas(source, dialogValues.amount, useAlpha)),
+  "filter-motion-blur": layerOptionsDialog("Motion Blur", [numberDialogField("angle", "Angle", 0, -360, 360, 1, "deg"), numberDialogField("distance", "Distance", 12, 1, 200, 1, "px")], (source, dialogValues, useAlpha) => motionBlurCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.angle} ${dialogValues.distance}`),
+  "filter-unsharp-mask": layerOptionsDialog("Unsharp Mask", [numberDialogField("amount", "Amount", 150, 1, 500, 1, "%"), numberDialogField("radius", "Radius", 1.5, 0.1, 100, 0.1, "px"), numberDialogField("threshold", "Threshold", 0, 0, 255, 1, "", true)], (source, dialogValues, useAlpha) => unsharpMaskCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.amount} ${dialogValues.radius} ${dialogValues.threshold}`),
+  "filter-smart-sharpen": layerOptionsDialog("Smart Sharpen", [numberDialogField("amount", "Amount", 150, 1, 500, 1, "%"), numberDialogField("radius", "Radius", 1.5, 0.1, 100, 0.1, "px"), numberDialogField("reduceNoise", "Reduce Noise", 20, 0, 100, 1, "%")], (source, dialogValues, useAlpha) => smartSharpenCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.amount} ${dialogValues.radius} ${dialogValues.reduceNoise}`),
+  "filter-high-pass": singleValueLayerDialog("High Pass", numberDialogField("radius", "Radius", 3, 0.1, 100, 0.1, "px"), (source, dialogValues, useAlpha) => highPassCanvas(source, dialogValues.radius, useAlpha)),
+  "filter-oil-paint": layerOptionsDialog("Oil Paint", [numberDialogField("radius", "Radius", 3, 1, 8, 1, "px", true), numberDialogField("intensity", "Intensity", 8, 1, 20, 1, "", true)], (source, dialogValues, useAlpha) => oilPaintCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.radius} ${dialogValues.intensity}`),
+  "filter-glowing-edges": layerOptionsDialog("Glowing Edges", [numberDialogField("width", "Width", 2, 1, 8, 1, "px", true), numberDialogField("brightness", "Brightness", 8, 1, 20, 1), numberDialogField("smoothness", "Smoothness", 5, 0, 10, 1, "", true)], (source, dialogValues, useAlpha) => glowingEdgesCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.width} ${dialogValues.brightness} ${dialogValues.smoothness}`),
+  "filter-emboss": layerOptionsDialog("Emboss", [numberDialogField("angle", "Angle", 135, -360, 360, 1, "deg"), numberDialogField("height", "Height", 2, 1, 16, 1, "px", true), numberDialogField("amount", "Amount", 100, 1, 500, 1, "%")], (source, dialogValues, useAlpha) => embossCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.angle} ${dialogValues.height} ${dialogValues.amount}`),
+  "filter-diffuse": layerOptionsDialog("Diffuse", [selectDialogField("mode", "Mode", "normal", [{ value: "normal", label: "Normal" }, { value: "darken", label: "Darken" }, { value: "lighten", label: "Lighten" }])], (source, dialogValues, useAlpha) => diffuseCanvas(source, dialogValues.mode, useAlpha), (dialogValues) => dialogValues.mode),
+  "filter-wind": layerOptionsDialog("Wind", [selectDialogField("direction", "Direction", "right", [{ value: "right", label: "Right" }, { value: "left", label: "Left" }]), selectDialogField("method", "Method", "wind", [{ value: "wind", label: "Wind" }, { value: "blast", label: "Blast" }, { value: "stagger", label: "Stagger" }])], (source, dialogValues, useAlpha) => windCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.direction} ${dialogValues.method}`),
+  "filter-trace-contour": layerOptionsDialog("Trace Contour", [numberDialogField("level", "Level", 128, 0, 255, 1, "", true), selectDialogField("edge", "Edge", "lower", edgeOptions)], (source, dialogValues, useAlpha) => traceContourCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.level} ${dialogValues.edge}`),
+  "filter-extrude": layerOptionsDialog("Extrude", [selectDialogField("type", "Type", "blocks", [{ value: "blocks", label: "Blocks" }, { value: "pyramids", label: "Pyramids" }]), numberDialogField("size", "Size", 8, 2, 128, 1, "px", true), numberDialogField("depth", "Depth", 12, 1, 128, 1, "", true), selectDialogField("face", "Face", "solid", [{ value: "solid", label: "Solid" }, { value: "original", label: "Original" }])], (source, dialogValues, useAlpha) => extrudeCanvas(source, { ...dialogValues, solid: dialogValues.face === "solid" }, useAlpha), (dialogValues) => `${dialogValues.type} ${dialogValues.size} ${dialogValues.depth} ${dialogValues.face}`),
+  "filter-tiles": layerOptionsDialog("Tiles", [numberDialogField("tiles", "Tile Count", 8, 1, 99, 1, "", true), numberDialogField("offset", "Max Offset", 12, 0, 256, 1, "px", true), selectDialogField("fill", "Fill Empty Area", "background", [{ value: "background", label: "Background" }, { value: "foreground", label: "Foreground" }, { value: "inverse", label: "Inverse Image" }, { value: "unaltered", label: "Unaltered" }])], (source, dialogValues, useAlpha) => tilesCanvas(source, { ...dialogValues, foreground: state.brush.color, background: state.backgroundColor }, useAlpha), (dialogValues) => `${dialogValues.tiles} ${dialogValues.offset} ${dialogValues.fill}`),
+  "filter-lens-flare": layerOptionsDialog("Lens Flare", [numberDialogField("brightness", "Brightness", 100, 1, 300, 1, "%"), numberDialogField("x", "X Position", 50, 0, 100, 1, "%"), numberDialogField("y", "Y Position", 50, 0, 100, 1, "%"), selectDialogField("type", "Type", "zoom", () => LENS_FLARE_TYPES.map((type) => ({ value: type.key, label: type.label })))], (source, dialogValues, useAlpha) => lensFlareCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.brightness} ${dialogValues.x} ${dialogValues.y} ${dialogValues.type}`),
+  "filter-fibers": layerOptionsDialog("Fibers", [numberDialogField("variance", "Variance", 16, 1, 64, 1), numberDialogField("strength", "Strength", 4, 1, 64, 1)], (source, dialogValues, useAlpha) => fibersCanvas(source, { ...dialogValues, foreground: state.brush.color, background: state.backgroundColor }, useAlpha), (dialogValues) => `${dialogValues.variance} ${dialogValues.strength}`),
+  "filter-lighting-effects": layerOptionsDialog("Lighting Effects", [numberDialogField("intensity", "Intensity", 75, -100, 200, 1, "%"), numberDialogField("x", "X Position", 50, 0, 100, 1, "%"), numberDialogField("y", "Y Position", 50, 0, 100, 1, "%"), numberDialogField("radius", "Radius", 55, 1, 200, 1, "%"), numberDialogField("ambient", "Ambient", 25, 0, 100, 1, "%")], (source, dialogValues, useAlpha) => lightingEffectsCanvas(source, { ...dialogValues, color: state.brush.color }, useAlpha), (dialogValues) => `${dialogValues.intensity} ${dialogValues.x} ${dialogValues.y} ${dialogValues.radius} ${dialogValues.ambient}`),
+  "filter-noise": layerOptionsDialog("Add Noise", [numberDialogField("amount", "Amount", 12, 0.1, 400, 0.1, "%"), selectDialogField("distribution", "Distribution", "uniform", [{ value: "uniform", label: "Uniform" }, { value: "gaussian", label: "Gaussian" }]), checkboxDialogField("monochromatic", "Monochromatic", true)], (source, dialogValues, useAlpha) => noiseCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.amount} ${dialogValues.distribution} ${dialogValues.monochromatic ? "mono" : "color"}`),
+  "filter-reduce-noise": layerOptionsDialog("Reduce Noise", [numberDialogField("strength", "Strength", 6, 1, 10, 1), numberDialogField("preserve", "Preserve Details", 45, 0, 100, 1, "%")], (source, dialogValues, useAlpha) => reduceNoiseCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.strength} ${dialogValues.preserve}`),
+  "filter-dust-scratches": layerOptionsDialog("Dust & Scratches", [numberDialogField("radius", "Radius", 1, 1, 20, 1, "px", true), numberDialogField("threshold", "Threshold", 24, 0, 255, 1)], (source, dialogValues, useAlpha) => dustScratchesCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.radius} ${dialogValues.threshold}`),
+  "filter-median": singleValueLayerDialog("Median", numberDialogField("radius", "Radius", 1, 1, 20, 1, "px", true), (source, dialogValues, useAlpha) => medianCanvas(source, dialogValues.radius, useAlpha)),
+  "filter-color-halftone": singleValueLayerDialog("Color Halftone", numberDialogField("radius", "Max Radius", 8, 2, 64, 1, "px", true), (source, dialogValues, useAlpha) => colorHalftoneCanvas(source, dialogValues.radius, useAlpha)),
+  "filter-crystallize": singleValueLayerDialog("Crystallize", numberDialogField("cellSize", "Cell Size", 16, 2, 256, 1, "px", true), (source, dialogValues, useAlpha) => crystallizeCanvas(source, dialogValues.cellSize, useAlpha)),
+  "filter-pointillize": singleValueLayerDialog("Pointillize", numberDialogField("cellSize", "Cell Size", 12, 2, 256, 1, "px", true), (source, dialogValues, useAlpha) => pointillizeCanvas(source, dialogValues.cellSize, useAlpha)),
+  "filter-mezzotint": layerOptionsDialog("Mezzotint", [selectDialogField("type", "Type", "fine-dots", () => MEZZOTINT_TYPES.map((type) => ({ value: type.key, label: type.label })))], (source, dialogValues, useAlpha) => mezzotintCanvas(source, parseMezzotintType(dialogValues.type), useAlpha), (dialogValues) => dialogValues.type),
+  "filter-mosaic": singleValueLayerDialog("Mosaic", numberDialogField("cellSize", "Cell Size", 12, 2, 256, 1, "px", true), (source, dialogValues, useAlpha) => mosaicCanvas(source, dialogValues.cellSize, useAlpha)),
+  "filter-offset": layerOptionsDialog("Offset", [numberDialogField("x", "Horizontal", 24, -10000, 10000, 1, "px", true), numberDialogField("y", "Vertical", 0, -10000, 10000, 1, "px", true)], (source, dialogValues, useAlpha) => offsetWrapCanvas(source, dialogValues, useAlpha), (dialogValues) => `${dialogValues.x} ${dialogValues.y}`),
+  "filter-maximum": singleValueLayerDialog("Maximum", numberDialogField("radius", "Radius", 1, 1, 20, 1, "px", true), (source, dialogValues, useAlpha) => extremaCanvas(source, dialogValues.radius, "maximum", useAlpha)),
+  "filter-minimum": singleValueLayerDialog("Minimum", numberDialogField("radius", "Radius", 1, 1, 20, 1, "px", true), (source, dialogValues, useAlpha) => extremaCanvas(source, dialogValues.radius, "minimum", useAlpha)),
+  "rename-layer": {
+    title: "Rename Layer",
+    fields: () => [textDialogField("name", "Name", activeLayer()?.name || "")],
+    serialize: (dialogValues) => dialogValues.name,
+  },
+  "color-range": {
+    title: "Color Range",
+    fields: () => [numberDialogField("tolerance", `Tolerance for ${state.brush.color}`, state.wandTolerance, Number(controls.wandTolerance.min), Number(controls.wandTolerance.max), 1, "", true)],
+    colorRangePreview: true,
+    serialize: (dialogValues) => String(dialogValues.tolerance),
+  },
+  "feather-selection": {
+    title: "Feather Selection",
+    fields: () => [numberDialogField("amount", "Radius", state.selectionFeather || 8, Number(controls.selectionFeather.min), Number(controls.selectionFeather.max), 1, "px", true)],
+    selectionPreview(dialogValues) {
+      state.selectionFeather = clamp(Math.round(dialogValues.amount), Number(controls.selectionFeather.min), Number(controls.selectionFeather.max));
+      controls.selectionFeather.value = state.selectionFeather;
+      values.selectionFeather.textContent = `${state.selectionFeather} px`;
+      updateToolUi();
+      render();
+      updateStatus(`Feather ${state.selectionFeather}px preview`);
+    },
+    serialize: (dialogValues) => String(dialogValues.amount),
+  },
+  "smooth-selection": {
+    title: "Smooth Selection",
+    fields: [numberDialogField("amount", "Radius", 8, 1, 32, 1, "px", true)],
+    selectionPreview: (dialogValues) => smoothSelection(dialogValues.amount),
+    serialize: (dialogValues) => String(dialogValues.amount),
+  },
+  "expand-selection": {
+    title: "Expand Selection",
+    fields: [numberDialogField("amount", "Amount", 8, 1, 32, 1, "px", true)],
+    selectionPreview: (dialogValues) => modifySelection(dialogValues.amount),
+    serialize: (dialogValues) => String(dialogValues.amount),
+  },
+  "contract-selection": {
+    title: "Contract Selection",
+    fields: [numberDialogField("amount", "Amount", 8, 1, 32, 1, "px", true)],
+    selectionPreview: (dialogValues) => modifySelection(-dialogValues.amount),
+    serialize: (dialogValues) => String(dialogValues.amount),
+  },
+  "border-selection": {
+    title: "Border Selection",
+    fields: [numberDialogField("amount", "Width", 8, 1, 32, 1, "px", true)],
+    selectionPreview: (dialogValues) => borderSelection(dialogValues.amount),
+    serialize: (dialogValues) => String(dialogValues.amount),
+  },
+};
+
+function runWithPromptDialogValue(value, action) {
+  const previousPrompt = window.prompt;
+  window.prompt = () => value;
+  try {
+    action();
+  } finally {
+    window.prompt = previousPrompt;
+  }
+}
+
+function openMenuCommandDialog(command, action) {
+  const spec = menuCommandDialogs[command];
+  if (!spec) return false;
+  const preview = createMenuCommandDialogPreview(spec);
+  if (preview === false) return true;
+  openCommandDialog({
+    title: spec.title,
+    fields: spec.fields,
+    preview,
+    validate: spec.validate,
+    onSend(dialogValues) {
+      runWithPromptDialogValue(spec.serialize(dialogValues), action);
+    },
+  });
+  return true;
+}
+
 function executeCommand(command) {
   const commands = {
     "new-document": newDocument,
@@ -13669,7 +14414,11 @@ function executeCommand(command) {
     "new-horizontal-guide": () => addGuide("horizontal"),
     "clear-guides": clearGuides,
   };
-  commands[command]?.();
+  const action = commands[command];
+  if (action) {
+    if (openMenuCommandDialog(command, action)) return;
+    action();
+  }
   if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
   }
@@ -13710,55 +14459,55 @@ function wireEvents() {
   buttons.saveJpg.addEventListener("click", () => exportImage("image/jpeg"));
   buttons.savePsd.addEventListener("click", exportPsd);
   buttons.newAdjustmentLayer.addEventListener("click", addAdjustmentLayer);
-  buttons.filterBlur.addEventListener("click", applyGaussianBlurFilter);
-  buttons.filterBoxBlur.addEventListener("click", applyBoxBlurFilter);
+  buttons.filterBlur.addEventListener("click", () => executeCommand("filter-blur"));
+  buttons.filterBoxBlur.addEventListener("click", () => executeCommand("filter-box-blur"));
   buttons.filterAverage.addEventListener("click", applyAverageFilter);
-  buttons.filterSurfaceBlur.addEventListener("click", applySurfaceBlurFilter);
-  buttons.filterSmartBlur.addEventListener("click", applySmartBlurFilter);
-  buttons.filterRadialBlur.addEventListener("click", applyRadialBlurFilter);
-  buttons.filterTwirl.addEventListener("click", applyTwirlFilter);
-  buttons.filterPinch.addEventListener("click", applyPinchFilter);
-  buttons.filterRipple.addEventListener("click", applyRippleFilter);
-  buttons.filterSpherize.addEventListener("click", applySpherizeFilter);
-  buttons.filterZigZag.addEventListener("click", applyZigZagFilter);
-  buttons.filterWave.addEventListener("click", applyWaveFilter);
-  buttons.filterPolar.addEventListener("click", applyPolarCoordinatesFilter);
-  buttons.filterShear.addEventListener("click", applyShearFilter);
-  buttons.filterMotionBlur.addEventListener("click", applyMotionBlurFilter);
+  buttons.filterSurfaceBlur.addEventListener("click", () => executeCommand("filter-surface-blur"));
+  buttons.filterSmartBlur.addEventListener("click", () => executeCommand("filter-smart-blur"));
+  buttons.filterRadialBlur.addEventListener("click", () => executeCommand("filter-radial-blur"));
+  buttons.filterTwirl.addEventListener("click", () => executeCommand("filter-twirl"));
+  buttons.filterPinch.addEventListener("click", () => executeCommand("filter-pinch"));
+  buttons.filterRipple.addEventListener("click", () => executeCommand("filter-ripple"));
+  buttons.filterSpherize.addEventListener("click", () => executeCommand("filter-spherize"));
+  buttons.filterZigZag.addEventListener("click", () => executeCommand("filter-zigzag"));
+  buttons.filterWave.addEventListener("click", () => executeCommand("filter-wave"));
+  buttons.filterPolar.addEventListener("click", () => executeCommand("filter-polar-coordinates"));
+  buttons.filterShear.addEventListener("click", () => executeCommand("filter-shear"));
+  buttons.filterMotionBlur.addEventListener("click", () => executeCommand("filter-motion-blur"));
   buttons.filterSharpen.addEventListener("click", () => applyLayerFilter("sharpen"));
-  buttons.filterUnsharp.addEventListener("click", applyUnsharpMaskFilter);
-  buttons.filterSmartSharpen.addEventListener("click", applySmartSharpenFilter);
-  buttons.filterHighPass.addEventListener("click", applyHighPassFilter);
+  buttons.filterUnsharp.addEventListener("click", () => executeCommand("filter-unsharp-mask"));
+  buttons.filterSmartSharpen.addEventListener("click", () => executeCommand("filter-smart-sharpen"));
+  buttons.filterHighPass.addEventListener("click", () => executeCommand("filter-high-pass"));
   buttons.filterFindEdges.addEventListener("click", () => applyLayerFilter("find-edges"));
-  buttons.filterOilPaint.addEventListener("click", applyOilPaintFilter);
-  buttons.filterGlowingEdges.addEventListener("click", applyGlowingEdgesFilter);
-  buttons.filterEmboss.addEventListener("click", applyEmbossFilter);
-  buttons.filterDiffuse.addEventListener("click", applyDiffuseFilter);
-  buttons.filterWind.addEventListener("click", applyWindFilter);
-  buttons.filterTraceContour.addEventListener("click", applyTraceContourFilter);
-  buttons.filterExtrude.addEventListener("click", applyExtrudeFilter);
-  buttons.filterTiles.addEventListener("click", applyTilesFilter);
+  buttons.filterOilPaint.addEventListener("click", () => executeCommand("filter-oil-paint"));
+  buttons.filterGlowingEdges.addEventListener("click", () => executeCommand("filter-glowing-edges"));
+  buttons.filterEmboss.addEventListener("click", () => executeCommand("filter-emboss"));
+  buttons.filterDiffuse.addEventListener("click", () => executeCommand("filter-diffuse"));
+  buttons.filterWind.addEventListener("click", () => executeCommand("filter-wind"));
+  buttons.filterTraceContour.addEventListener("click", () => executeCommand("filter-trace-contour"));
+  buttons.filterExtrude.addEventListener("click", () => executeCommand("filter-extrude"));
+  buttons.filterTiles.addEventListener("click", () => executeCommand("filter-tiles"));
   buttons.filterSolarize.addEventListener("click", () => applyLayerFilter("solarize"));
   buttons.filterClouds.addEventListener("click", applyCloudsFilter);
   buttons.filterDifferenceClouds.addEventListener("click", applyDifferenceCloudsFilter);
-  buttons.filterLensFlare.addEventListener("click", applyLensFlareFilter);
-  buttons.filterFibers.addEventListener("click", applyFibersFilter);
-  buttons.filterLightingEffects.addEventListener("click", applyLightingEffectsFilter);
-  buttons.filterNoise.addEventListener("click", applyAddNoiseFilter);
-  buttons.filterReduceNoise.addEventListener("click", applyReduceNoiseFilter);
+  buttons.filterLensFlare.addEventListener("click", () => executeCommand("filter-lens-flare"));
+  buttons.filterFibers.addEventListener("click", () => executeCommand("filter-fibers"));
+  buttons.filterLightingEffects.addEventListener("click", () => executeCommand("filter-lighting-effects"));
+  buttons.filterNoise.addEventListener("click", () => executeCommand("filter-noise"));
+  buttons.filterReduceNoise.addEventListener("click", () => executeCommand("filter-reduce-noise"));
   buttons.filterDespeckle.addEventListener("click", applyDespeckleFilter);
-  buttons.filterDustScratches.addEventListener("click", applyDustScratchesFilter);
-  buttons.filterMedian.addEventListener("click", applyMedianFilter);
-  buttons.filterColorHalftone.addEventListener("click", applyColorHalftoneFilter);
-  buttons.filterCrystallize.addEventListener("click", applyCrystallizeFilter);
-  buttons.filterPointillize.addEventListener("click", applyPointillizeFilter);
+  buttons.filterDustScratches.addEventListener("click", () => executeCommand("filter-dust-scratches"));
+  buttons.filterMedian.addEventListener("click", () => executeCommand("filter-median"));
+  buttons.filterColorHalftone.addEventListener("click", () => executeCommand("filter-color-halftone"));
+  buttons.filterCrystallize.addEventListener("click", () => executeCommand("filter-crystallize"));
+  buttons.filterPointillize.addEventListener("click", () => executeCommand("filter-pointillize"));
   buttons.filterFragment.addEventListener("click", applyFragmentFilter);
   buttons.filterFacet.addEventListener("click", applyFacetFilter);
-  buttons.filterMezzotint.addEventListener("click", applyMezzotintFilter);
-  buttons.filterMosaic.addEventListener("click", applyMosaicFilter);
-  buttons.filterOffset.addEventListener("click", applyOffsetFilter);
-  buttons.filterMaximum.addEventListener("click", () => applyExtremaFilter("maximum"));
-  buttons.filterMinimum.addEventListener("click", () => applyExtremaFilter("minimum"));
+  buttons.filterMezzotint.addEventListener("click", () => executeCommand("filter-mezzotint"));
+  buttons.filterMosaic.addEventListener("click", () => executeCommand("filter-mosaic"));
+  buttons.filterOffset.addEventListener("click", () => executeCommand("filter-offset"));
+  buttons.filterMaximum.addEventListener("click", () => executeCommand("filter-maximum"));
+  buttons.filterMinimum.addEventListener("click", () => executeCommand("filter-minimum"));
   buttons.newHistorySnapshot.addEventListener("click", createHistorySnapshot);
   buttons.applyCrop.addEventListener("click", applyCrop);
   buttons.cancelCrop.addEventListener("click", cancelCrop);
@@ -13797,13 +14546,13 @@ function wireEvents() {
   buttons.invertSelection.addEventListener("click", invertSelection);
   buttons.quickMask.addEventListener("click", toggleQuickMask);
   buttons.selectSubject.addEventListener("click", selectSubject);
-  buttons.colorRange.addEventListener("click", promptColorRange);
+  buttons.colorRange.addEventListener("click", () => executeCommand("color-range"));
   buttons.selectSimilar.addEventListener("click", selectSimilar);
   buttons.growSelection.addEventListener("click", growSelection);
-  buttons.smoothSelection.addEventListener("click", promptSelectionSmooth);
-  buttons.expandSelection.addEventListener("click", () => promptSelectionModify(1));
-  buttons.contractSelection.addEventListener("click", () => promptSelectionModify(-1));
-  buttons.borderSelection.addEventListener("click", promptSelectionBorder);
+  buttons.smoothSelection.addEventListener("click", () => executeCommand("smooth-selection"));
+  buttons.expandSelection.addEventListener("click", () => executeCommand("expand-selection"));
+  buttons.contractSelection.addEventListener("click", () => executeCommand("contract-selection"));
+  buttons.borderSelection.addEventListener("click", () => executeCommand("border-selection"));
   buttons.fillSelection.addEventListener("click", () => fillPixels("foreground"));
   buttons.fillBackground.addEventListener("click", () => fillPixels("background"));
   buttons.contentAwareFill.addEventListener("click", contentAwareFillSelection);
@@ -14245,12 +14994,12 @@ function wireEvents() {
     }
     if (key === "f6" && event.shiftKey && !inTextField && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      promptSelectionFeather();
+      executeCommand("feather-selection");
       return;
     }
     if (key === "f5" && event.shiftKey && !inTextField && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      promptFillPixels();
+      executeCommand("fill-dialog");
       return;
     }
     if ((event.ctrlKey || event.metaKey) && !inTextField) {
