@@ -62,6 +62,7 @@ const controls = {
   moveAutoSelect: document.querySelector("#moveAutoSelect"),
   healStrength: document.querySelector("#healStrength"),
   textContent: document.querySelector("#textContent"),
+  textFont: document.querySelector("#textFont"),
   textSize: document.querySelector("#textSize"),
   layerOpacity: document.querySelector("#layerOpacity"),
   layerFill: document.querySelector("#layerFill"),
@@ -363,6 +364,7 @@ const state = {
   backgroundColor: "#101114",
   text: {
     content: "New text",
+    fontFamily: "Georgia",
     size: 72,
   },
   history: [],
@@ -467,6 +469,30 @@ const brushPresets = {
   },
 };
 
+const TEXT_LAYER_PADDING = 8;
+const TEXT_FONT_FALLBACKS = {
+  Georgia: "Cambria, serif",
+  Bahnschrift: "Aptos, Segoe UI, sans-serif",
+  Aptos: "Segoe UI, sans-serif",
+  "Segoe UI": "Aptos, sans-serif",
+  Meiryo: '"Yu Gothic", sans-serif',
+  "Yu Gothic": "Meiryo, sans-serif",
+  Arial: "Helvetica, sans-serif",
+  "Times New Roman": "Georgia, serif",
+  "Courier New": "Consolas, monospace",
+};
+const PSD_FONT_NAMES = {
+  Georgia: "Georgia",
+  Bahnschrift: "Bahnschrift",
+  Aptos: "Aptos",
+  "Segoe UI": "SegoeUI",
+  Meiryo: "Meiryo",
+  "Yu Gothic": "YuGothic-Regular",
+  Arial: "ArialMT",
+  "Times New Roman": "TimesNewRomanPSMT",
+  "Courier New": "CourierNewPSMT",
+};
+
 function makeCanvas(width, height) {
   const nextCanvas = document.createElement("canvas");
   nextCanvas.width = Math.max(1, Math.round(width));
@@ -488,6 +514,11 @@ function cloneStyles(styles = defaultStyles) {
   };
 }
 
+function cloneTextOptions(text) {
+  if (!text) return null;
+  return { ...text };
+}
+
 function hexToRgb(color) {
   const normalized = color.replace("#", "");
   const value = Number.parseInt(normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized, 16);
@@ -501,6 +532,65 @@ function hexToRgb(color) {
 function rgbaString(color, alpha) {
   const { r, g, b } = hexToRgb(color);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function cssFontFamily(fontFamily) {
+  const family = fontFamily || state.text.fontFamily;
+  const quoted = /[\s,]/.test(family) ? `"${family.replace(/"/g, '\\"')}"` : family;
+  return `${quoted}, ${TEXT_FONT_FALLBACKS[family] || "serif"}`;
+}
+
+function textCanvasFont(text) {
+  return `800 ${Math.max(1, Number(text.size) || state.text.size)}px ${cssFontFamily(text.fontFamily)}`;
+}
+
+function textLayerMetrics(text) {
+  const measureCanvas = makeCanvas(1, 1);
+  const measureCtx = measureCanvas.getContext("2d");
+  const content = text.content || "Text";
+  const lines = content.split(/\r?\n/);
+  const size = Math.max(1, Number(text.size) || state.text.size);
+  const lineHeight = Math.ceil(size * 1.18);
+  measureCtx.font = textCanvasFont(text);
+  const measurements = lines.map((line) => measureCtx.measureText(line || " "));
+  const width = Math.max(1, ...measurements.map((metrics) => Math.ceil(metrics.width)));
+  const ascent = Math.ceil(Math.max(...measurements.map((metrics) => metrics.actualBoundingBoxAscent || size * 0.78)));
+  const descent = Math.ceil(Math.max(...measurements.map((metrics) => metrics.actualBoundingBoxDescent || size * 0.22)));
+  return {
+    lines,
+    width: Math.ceil(width + TEXT_LAYER_PADDING * 2),
+    height: Math.ceil(ascent + descent + lineHeight * (lines.length - 1) + TEXT_LAYER_PADDING * 2),
+    baselineOffset: TEXT_LAYER_PADDING + ascent,
+    lineHeight,
+    leftOffset: TEXT_LAYER_PADDING,
+  };
+}
+
+function renderTextLayer(layer, anchorDoc = null) {
+  if (!layer?.text) return;
+  const previousLeftOffset = layer.text.leftOffset ?? TEXT_LAYER_PADDING;
+  const previousBaseline = layer.text.baselineOffset ?? Math.round((Number(layer.text.size) || state.text.size) * 0.8) + TEXT_LAYER_PADDING;
+  const anchor = anchorDoc || {
+    x: layer.x + previousLeftOffset,
+    y: layer.y + previousBaseline,
+  };
+  const metrics = textLayerMetrics(layer.text);
+  const nextCanvas = makeCanvas(metrics.width, metrics.height);
+  const nextCtx = nextCanvas.getContext("2d");
+  nextCtx.save();
+  nextCtx.fillStyle = layer.text.color || state.brush.color;
+  nextCtx.font = textCanvasFont(layer.text);
+  nextCtx.textBaseline = "alphabetic";
+  metrics.lines.forEach((line, index) => {
+    nextCtx.fillText(line || " ", metrics.leftOffset, metrics.baselineOffset + metrics.lineHeight * index);
+  });
+  nextCtx.restore();
+  layer.canvas = nextCanvas;
+  layer.x = anchor.x - metrics.leftOffset;
+  layer.y = anchor.y - metrics.baselineOffset;
+  layer.text.leftOffset = metrics.leftOffset;
+  layer.text.baselineOffset = metrics.baselineOffset;
+  layer.text.lineHeight = metrics.lineHeight;
 }
 
 function activeStyleCount(styles) {
@@ -585,6 +675,7 @@ function createLayer(name, source, options = {}) {
     maskDisabled: Boolean(options.maskDisabled),
     adjustments: options.adjustments ? { ...options.adjustments } : null,
     styles: cloneStyles(options.styles),
+    text: cloneTextOptions(options.text),
     x: options.x || 0,
     y: options.y || 0,
     visible: options.visible !== false,
@@ -631,12 +722,12 @@ function normalizeClippingMasks() {
 }
 
 function pixelEditingLocked(layer, editsPixels = state.paintTarget !== "mask") {
-  return Boolean(layer?.lockPixels && editsPixels);
+  return Boolean((layer?.lockPixels || layer?.type === "text") && editsPixels);
 }
 
 function guardPixelEditing(layer, editsPixels = state.paintTarget !== "mask") {
   if (!pixelEditingLocked(layer, editsPixels)) return false;
-  updateStatus("Layer pixels are locked");
+  updateStatus(layer?.type === "text" && editsPixels ? "Text layer remains editable; edit text settings instead" : "Layer pixels are locked");
   return true;
 }
 
@@ -738,20 +829,24 @@ function createSampleLayers() {
   }
   shapeCtx.globalAlpha = 1;
 
-  const typeLayer = makeCanvas(state.doc.width, state.doc.height);
-  const textCtx = typeLayer.getContext("2d");
-  textCtx.fillStyle = "#f7f7f2";
-  textCtx.font = "800 88px Georgia, Cambria, serif";
-  textCtx.fillText("IL DESIGNER", 170, 840);
-  textCtx.font = "600 30px Bahnschrift, Segoe UI, sans-serif";
-  textCtx.fillText("layered image editor", 176, 894);
+  const titleLayer = createLayer("Type", makeCanvas(1, 1), {
+    type: "text",
+    text: { content: "IL DESIGNER", fontFamily: "Georgia", size: 88, color: "#f7f7f2" },
+  });
+  renderTextLayer(titleLayer, { x: 170, y: 840 });
+  const captionLayer = createLayer("Caption", makeCanvas(1, 1), {
+    type: "text",
+    text: { content: "layered image editor", fontFamily: "Bahnschrift", size: 30, color: "#f7f7f2" },
+  });
+  renderTextLayer(captionLayer, { x: 176, y: 894 });
 
   state.layers = [
     createBackgroundLayer(background),
     createLayer("Color blocks", shapes),
-    createLayer("Type", typeLayer),
+    titleLayer,
+    captionLayer,
   ];
-  state.activeLayerId = state.layers[2].id;
+  state.activeLayerId = captionLayer.id;
   state.fileName = "Untitled.psd";
   state.moveAutoSelect = true;
   state.showExtras = true;
@@ -828,6 +923,7 @@ function snapshot() {
     smudgeStrength: state.smudgeStrength,
     toneMode: state.toneMode,
     toneExposure: state.toneExposure,
+    text: { ...state.text },
     cloneSource: state.cloneSource ? { ...state.cloneSource } : null,
     adjustments: { ...state.adjustments },
     layers: state.layers.map((layer) => ({
@@ -837,6 +933,7 @@ function snapshot() {
       maskDisabled: Boolean(layer.maskDisabled),
       adjustments: layer.adjustments ? { ...layer.adjustments } : null,
       styles: cloneStyles(layer.styles),
+      text: cloneTextOptions(layer.text),
       blendIfBlack: layer.blendIfBlack ?? 0,
       blendIfWhite: layer.blendIfWhite ?? 255,
     })),
@@ -891,6 +988,7 @@ function restoreSnapshot(nextSnapshot) {
   state.smudgeStrength = nextSnapshot.smudgeStrength ?? 0.55;
   state.toneMode = nextSnapshot.toneMode || "dodge";
   state.toneExposure = nextSnapshot.toneExposure ?? 0.32;
+  state.text = { content: "New text", fontFamily: "Georgia", size: 72, ...(nextSnapshot.text || {}) };
   state.cloneSource = nextSnapshot.cloneSource ? { ...nextSnapshot.cloneSource } : null;
   state.adjustments = { ...nextSnapshot.adjustments };
   state.layers = nextSnapshot.layers.map((layer) => ({
@@ -900,6 +998,7 @@ function restoreSnapshot(nextSnapshot) {
     maskDisabled: Boolean(layer.maskDisabled),
     adjustments: layer.adjustments ? { ...layer.adjustments } : null,
     styles: cloneStyles(layer.styles),
+    text: cloneTextOptions(layer.text),
     blendIfBlack: layer.blendIfBlack ?? 0,
     blendIfWhite: layer.blendIfWhite ?? 255,
   }));
@@ -2753,6 +2852,7 @@ function updateActionStates() {
   buttons.strokePath.disabled = state.workPath.length < 2;
   buttons.clearPath.disabled = state.workPath.length === 0;
   const layer = activeLayer();
+  syncTextControlsFromState();
   if (layer) {
     if (!layer.mask && state.paintTarget === "mask") {
       state.paintTarget = "pixels";
@@ -2805,7 +2905,7 @@ function updateActionStates() {
     buttons.invertMask.disabled = !layer.mask;
     buttons.deleteMask.disabled = !layer.mask;
     buttons.contentAwareFill.disabled = !state.selectionRect || layer.type === "adjustment" || state.paintTarget === "mask" || pixelEditingLocked(layer, true);
-    buttons.rasterizeLayerStyle.disabled = layer.type === "adjustment" || activeStyleCount(layer.styles) === 0 || layer.mask || layer.clipped || layer.lockPixels || layer.lockTransparency || layer.lockPosition;
+    buttons.rasterizeLayerStyle.disabled = layer.type !== "pixel" || activeStyleCount(layer.styles) === 0 || layer.mask || layer.clipped || layer.lockPixels || layer.lockTransparency || layer.lockPosition;
     const filterDisabled = layer.type === "adjustment" || pixelEditingLocked(layer);
     buttons.filterBlur.disabled = filterDisabled;
     buttons.filterBoxBlur.disabled = filterDisabled;
@@ -2914,6 +3014,18 @@ function syncLayerStyleControls(layer = activeLayer()) {
   dom.styleStatus.textContent = disabled ? "Unavailable" : `${activeStyleCount(styles)} active`;
 }
 
+function activeTextSettings() {
+  const layer = activeLayer();
+  return layer?.type === "text" && layer.text ? layer.text : state.text;
+}
+
+function syncTextControlsFromState() {
+  const text = activeTextSettings();
+  if (controls.textContent.value !== text.content) controls.textContent.value = text.content;
+  if (controls.textFont.value !== text.fontFamily) controls.textFont.value = text.fontFamily;
+  if (Number(controls.textSize.value) !== Number(text.size)) controls.textSize.value = text.size;
+}
+
 function syncControlsFromState() {
   controls.brushSize.value = state.brush.size;
   controls.brushOpacity.value = Math.round(state.brush.opacity * 100);
@@ -2925,8 +3037,7 @@ function syncControlsFromState() {
   controls.brushSpacing.value = state.brush.spacing;
   controls.brushFlow.value = Math.round(state.brush.flow * 100);
   controls.moveAutoSelect.checked = state.moveAutoSelect;
-  controls.textContent.value = state.text.content;
-  controls.textSize.value = state.text.size;
+  syncTextControlsFromState();
   controls.paintTarget.value = state.paintTarget;
   controls.selectionFeather.value = state.selectionFeather;
   controls.selectionMode.value = state.selectionMode;
@@ -3368,7 +3479,7 @@ function renderLayerList() {
     const meta = document.createElement("span");
     meta.className = "layer-meta";
     const styleCount = activeStyleCount(layer.styles);
-    meta.textContent = layer.maskDisabled ? "MASK OFF" : layer.clipped ? "CLIP" : layer.lockTransparency || layer.lockPixels || layer.lockPosition ? "LOCK" : layer.type === "adjustment" ? "ADJ" : styleCount ? `FX ${styleCount}` : `${Math.round(layer.opacity * 100)}%`;
+    meta.textContent = layer.maskDisabled ? "MASK OFF" : layer.clipped ? "CLIP" : layer.type === "text" ? "TYPE" : layer.lockTransparency || layer.lockPixels || layer.lockPosition ? "LOCK" : layer.type === "adjustment" ? "ADJ" : styleCount ? `FX ${styleCount}` : `${Math.round(layer.opacity * 100)}%`;
 
     row.append(visibility, thumb, maskThumb, name, meta);
     dom.layerList.append(row);
@@ -3659,6 +3770,10 @@ function cursorForTransform(hit) {
 
 function toggleFreeTransform(force) {
   const layer = activeLayer();
+  if (force !== false && layer?.type === "text") {
+    updateStatus("Text layer remains editable; use Move or text settings");
+    return;
+  }
   if (force !== false && guardPositionEditing(layer)) return;
   state.freeTransform = Boolean(layer) && (force ?? !state.freeTransform);
   if (state.freeTransform) {
@@ -4305,23 +4420,41 @@ function drawToneStroke(from, to) {
   });
 }
 
-function placeText(docPoint) {
+function activeTextLayer() {
   const layer = activeLayer();
-  if (!layer || !layer.visible) return;
-  if (guardPixelEditing(layer)) return;
-  preserveLockedTransparency(layer, layer.canvas, () => {
-    return editTargetWithinSelection(layer.canvas, layer, (editable) => {
-      const layerCtx = editable.getContext("2d");
-      layerCtx.save();
-      layerCtx.fillStyle = state.brush.color;
-      layerCtx.font = `800 ${state.text.size}px Georgia, Cambria, serif`;
-      layerCtx.textBaseline = "alphabetic";
-      layerCtx.fillText(state.text.content || "Text", docPoint.x - layer.x, docPoint.y - layer.y);
-      layerCtx.restore();
-      return true;
-    });
+  return layer?.type === "text" && layer.text ? layer : null;
+}
+
+function updateActiveTextLayer(updates) {
+  const layer = activeTextLayer();
+  if (!layer) return false;
+  layer.text = { ...layer.text, ...updates };
+  renderTextLayer(layer);
+  renderAll();
+  return true;
+}
+
+function commitActiveTextLayerEdit(label) {
+  if (!activeTextLayer()) return;
+  commitHistory(label);
+}
+
+function placeText(docPoint) {
+  const content = state.text.content || "Text";
+  const layer = createLayer(`Type ${state.layerCounter}`, makeCanvas(1, 1), {
+    type: "text",
+    text: {
+      content,
+      fontFamily: state.text.fontFamily,
+      size: state.text.size,
+      color: state.brush.color,
+    },
   });
-  commitHistory("Add text");
+  state.layerCounter += 1;
+  renderTextLayer(layer, docPoint);
+  state.layers.push(layer);
+  state.activeLayerId = layer.id;
+  commitHistory("Add text layer");
   renderAll();
 }
 
@@ -5398,7 +5531,7 @@ function layerStylePadding(styles) {
 
 function rasterizeLayerStyle() {
   const layer = activeLayer();
-  if (!layer || layer.type === "adjustment") {
+  if (!layer || layer.type !== "pixel") {
     updateStatus("Select a pixel layer to rasterize style");
     return;
   }
@@ -5566,6 +5699,7 @@ function createLayerCopy(layer, offset = 24) {
     type: layer.type,
     adjustments: layer.adjustments,
     styles: layer.styles,
+    text: layer.text,
     clipped: layer.clipped,
     ...copyLocks,
   });
@@ -12094,6 +12228,18 @@ class PsdWriter {
     this.u32(value < 0 ? 0x100000000 + value : value);
   }
 
+  f32(value) {
+    const bytes = new Uint8Array(4);
+    new DataView(bytes.buffer).setFloat32(0, value, false);
+    this.bytes(bytes);
+  }
+
+  f64(value) {
+    const bytes = new Uint8Array(8);
+    new DataView(bytes.buffer).setFloat64(0, value, false);
+    this.bytes(bytes);
+  }
+
   ascii(text) {
     const bytes = new Uint8Array(text.length);
     for (let index = 0; index < text.length; index += 1) {
@@ -12133,6 +12279,53 @@ function writePsdPascalString(writer, text) {
   writer.pad((4 - ((name.length + 1) % 4)) % 4);
 }
 
+function writePsdUnicodeString(writer, text) {
+  const value = String(text ?? "");
+  writer.u32(value.length + 1);
+  for (let index = 0; index < value.length; index += 1) {
+    writer.u16(value.charCodeAt(index));
+  }
+  writer.u16(0);
+}
+
+function writePsdClassId(writer, value) {
+  const text = String(value || "");
+  if (text.length === 4 && !["warp", "time", "hold", "list"].includes(text)) {
+    writer.i32(0);
+    writer.ascii(text);
+    return;
+  }
+  writer.i32(text.length);
+  writer.ascii(text);
+}
+
+function writePsdDescriptor(writer, name, classId, entries) {
+  writer.u32(16);
+  writePsdUnicodeString(writer, name);
+  writePsdClassId(writer, classId);
+  writer.u32(entries.length);
+  entries.forEach(({ key, type, value }) => {
+    writePsdClassId(writer, key);
+    writer.ascii(type);
+    if (type === "TEXT") {
+      writePsdUnicodeString(writer, value);
+    } else if (type === "enum") {
+      const [enumType, enumValue] = String(value).split(".");
+      writePsdClassId(writer, enumType);
+      writePsdClassId(writer, enumValue);
+    } else if (type === "long") {
+      writer.i32(value);
+    } else if (type === "doub") {
+      writer.f64(value);
+    } else if (type === "bool") {
+      writer.u8(value ? 1 : 0);
+    } else if (type === "tdta") {
+      writer.u32(value.length);
+      writer.bytes(value);
+    }
+  });
+}
+
 function psdBlendModeKey(blendMode) {
   return {
     "source-over": "norm",
@@ -12153,6 +12346,279 @@ function psdBlendModeKey(blendMode) {
     color: "colr",
     luminosity: "lum ",
   }[blendMode] || "norm";
+}
+
+function psdFontName(fontFamily) {
+  return PSD_FONT_NAMES[fontFamily] || String(fontFamily || "Georgia").replace(/\s+/g, "");
+}
+
+function psdEngineNumber(value, key = "") {
+  const floatKeys = new Set([
+    "Axis", "XY", "Zone", "WordSpacing", "FirstLineIndent", "GlyphSpacing", "StartIndent", "EndIndent", "SpaceBefore",
+    "SpaceAfter", "LetterSpacing", "Values", "GridSize", "GridLeading", "PointBase", "BoxBounds", "TransformPoint0",
+    "TransformPoint1", "TransformPoint2", "FontSize", "Leading", "HorizontalScale", "VerticalScale", "BaselineShift",
+    "Tsume", "OutlineWidth", "AutoLeading",
+  ]);
+  if (!floatKeys.has(key) && (value | 0) === value) return String(value);
+  return value.toFixed(5).replace(/(\d)0+$/g, "$1").replace(/^0+\.([1-9])/g, ".$1").replace(/^-0+\.0(\d)/g, "-.0$1");
+}
+
+function serializePsdEngineData(data) {
+  let bytes = [];
+  let indent = 0;
+  const write = (value) => {
+    bytes.push(value & 0xff);
+  };
+  const writeString = (value) => {
+    for (let index = 0; index < value.length; index += 1) write(value.charCodeAt(index));
+  };
+  const writeIndent = () => {
+    for (let index = 0; index < indent; index += 1) writeString("\t");
+  };
+  const writeStringByte = (value) => {
+    if (value === 40 || value === 41 || value === 92) write(92);
+    write(value);
+  };
+  const writeValue = (value, key = "", inProperty = false) => {
+    const prefix = () => {
+      if (inProperty) writeString(" ");
+      else writeIndent();
+    };
+    if (value === null) {
+      prefix();
+      writeString("null");
+    } else if (typeof value === "number") {
+      prefix();
+      writeString(psdEngineNumber(value, key));
+    } else if (typeof value === "boolean") {
+      prefix();
+      writeString(value ? "true" : "false");
+    } else if (typeof value === "string") {
+      prefix();
+      writeString("(");
+      write(0xfe);
+      write(0xff);
+      for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        writeStringByte((code >> 8) & 0xff);
+        writeStringByte(code & 0xff);
+      }
+      writeString(")");
+    } else if (Array.isArray(value)) {
+      prefix();
+      if (value.every((item) => typeof item === "number")) {
+        writeString("[");
+        value.forEach((item) => {
+          writeString(" ");
+          writeString(key === "RunLengthArray" ? String(item) : psdEngineNumber(item, key));
+        });
+        writeString(" ]");
+      } else {
+        writeString("[\n");
+        indent += 1;
+        value.forEach((item) => {
+          writeValue(item, key);
+          writeString("\n");
+        });
+        indent -= 1;
+        writeIndent();
+        writeString("]");
+      }
+    } else {
+      if (inProperty) writeString("\n");
+      writeIndent();
+      writeString("<<\n");
+      indent += 1;
+      Object.keys(value).forEach((childKey) => {
+        writeIndent();
+        writeString(`/${childKey}`);
+        writeValue(value[childKey], childKey, true);
+        writeString("\n");
+      });
+      indent -= 1;
+      writeIndent();
+      writeString(">>");
+    }
+  };
+  writeString("\n\n");
+  writeValue(data);
+  return new Uint8Array(bytes);
+}
+
+function psdTextEngineData(layer) {
+  const text = `${String(layer.text?.content || "Text").replace(/\r?\n/g, "\r")}\r`;
+  const fontName = psdFontName(layer.text?.fontFamily);
+  const size = Math.max(1, Number(layer.text?.size) || state.text.size);
+  const color = hexToRgb(layer.text?.color || state.brush.color);
+  const paragraphProperties = {
+    Justification: 0,
+    FirstLineIndent: 0,
+    StartIndent: 0,
+    EndIndent: 0,
+    SpaceBefore: 0,
+    SpaceAfter: 0,
+    AutoHyphenate: true,
+    HyphenatedWordSize: 6,
+    PreHyphen: 2,
+    PostHyphen: 2,
+    ConsecutiveHyphens: 8,
+    Zone: 36,
+    WordSpacing: [0.8, 1, 1.33],
+    LetterSpacing: [0, 0, 0],
+    GlyphSpacing: [1, 1, 1],
+    AutoLeading: 1.2,
+    LeadingType: 0,
+    Hanging: false,
+    Burasagari: false,
+    KinsokuOrder: 0,
+    EveryLineComposer: false,
+  };
+  const styleSheetData = {
+    Font: 1,
+    FontSize: size,
+    FauxBold: true,
+    FauxItalic: false,
+    AutoLeading: true,
+    Leading: 0,
+    HorizontalScale: 1,
+    VerticalScale: 1,
+    Tracking: 0,
+    AutoKerning: true,
+    Kerning: 0,
+    BaselineShift: 0,
+    FontCaps: 0,
+    FontBaseline: 0,
+    Underline: false,
+    Strikethrough: false,
+    Ligatures: true,
+    DLigatures: false,
+    BaselineDirection: 2,
+    Tsume: 0,
+    StyleRunAlignment: 2,
+    Language: 0,
+    NoBreak: false,
+    FillColor: { Type: 1, Values: [1, color.r / 255, color.g / 255, color.b / 255] },
+    StrokeColor: { Type: 1, Values: [1, 0, 0, 0] },
+    FillFlag: true,
+    StrokeFlag: false,
+    FillFirst: true,
+    YUnderline: 1,
+    OutlineWidth: 1,
+    CharacterDirection: 0,
+    HindiNumbers: false,
+    Kashida: 1,
+    DiacriticPos: 2,
+  };
+  const resourceDict = {
+    KinsokuSet: [],
+    MojiKumiSet: [],
+    TheNormalStyleSheet: 0,
+    TheNormalParagraphSheet: 0,
+    ParagraphSheetSet: [{ Name: "Normal RGB", DefaultStyleSheet: 0, Properties: paragraphProperties }],
+    StyleSheetSet: [{ Name: "Normal RGB", StyleSheetData: styleSheetData }],
+    FontSet: [
+      { Name: "AdobeInvisFont", Script: 0, FontType: 0, Synthetic: 0 },
+      { Name: fontName, Script: 0, FontType: 0, Synthetic: 0 },
+    ],
+    SuperscriptSize: 0.583,
+    SuperscriptPosition: 0.333,
+    SubscriptSize: 0.583,
+    SubscriptPosition: 0.333,
+    SmallCapSize: 0.7,
+  };
+  return serializePsdEngineData({
+    EngineDict: {
+      Editor: { Text: text },
+      ParagraphRun: {
+        DefaultRunData: { ParagraphSheet: { DefaultStyleSheet: 0, Properties: {} }, Adjustments: { Axis: [1, 0, 1], XY: [0, 0] } },
+        RunArray: [{ ParagraphSheet: { DefaultStyleSheet: 0, Properties: paragraphProperties }, Adjustments: { Axis: [1, 0, 1], XY: [0, 0] } }],
+        RunLengthArray: [text.length],
+        IsJoinable: 1,
+      },
+      StyleRun: {
+        DefaultRunData: { StyleSheet: { StyleSheetData: {} } },
+        RunArray: [{ StyleSheet: { StyleSheetData: styleSheetData } }],
+        RunLengthArray: [text.length],
+        IsJoinable: 2,
+      },
+      GridInfo: {
+        GridIsOn: false,
+        ShowGrid: false,
+        GridSize: 18,
+        GridLeading: 22,
+        GridColor: { Type: 1, Values: [1, 0, 0, 1] },
+        GridLeadingFillColor: { Type: 1, Values: [1, 0, 0, 1] },
+        AlignLineHeightToGridFlags: false,
+      },
+      AntiAlias: 4,
+      UseFractionalGlyphWidths: true,
+      Rendered: {
+        Version: 1,
+        Shapes: {
+          WritingDirection: 0,
+          Children: [{
+            ShapeType: 0,
+            Procession: 0,
+            Lines: { WritingDirection: 0, Children: [] },
+            Cookie: {
+              Photoshop: {
+                ShapeType: 0,
+                PointBase: [0, 0],
+                Base: { ShapeType: 0, TransformPoint0: [1, 0], TransformPoint1: [0, 1], TransformPoint2: [0, 0] },
+              },
+            },
+          }],
+        },
+      },
+    },
+    ResourceDict: resourceDict,
+    DocumentResources: resourceDict,
+  });
+}
+
+function psdTypeToolData(layer) {
+  const writer = new PsdWriter();
+  const left = layer.x;
+  const top = layer.y;
+  const right = layer.x + layer.canvas.width;
+  const bottom = layer.y + layer.canvas.height;
+  const baselineX = layer.x + (layer.text?.leftOffset ?? TEXT_LAYER_PADDING);
+  const baselineY = layer.y + (layer.text?.baselineOffset ?? Math.round((Number(layer.text?.size) || state.text.size) * 0.8));
+  const content = String(layer.text?.content || "Text").replace(/\r?\n/g, "\r");
+
+  writer.i16(1);
+  [1, 0, 0, 1, baselineX, baselineY].forEach((value) => writer.f64(value));
+  writer.i16(50);
+  writePsdDescriptor(writer, "", "TxLr", [
+    { key: "Txt ", type: "TEXT", value: content },
+    { key: "textGridding", type: "enum", value: "textGridding.None" },
+    { key: "Ornt", type: "enum", value: "Ornt.Hrzn" },
+    { key: "AntA", type: "enum", value: "Annt.antiAliasSharp" },
+    { key: "TextIndex", type: "long", value: 0 },
+    { key: "EngineData", type: "tdta", value: psdTextEngineData(layer) },
+  ]);
+  writer.i16(1);
+  writePsdDescriptor(writer, "", "warp", [
+    { key: "warpStyle", type: "enum", value: "warpStyle.warpNone" },
+    { key: "warpValue", type: "doub", value: 0 },
+    { key: "warpPerspective", type: "doub", value: 0 },
+    { key: "warpPerspectiveOther", type: "doub", value: 0 },
+    { key: "warpRotate", type: "enum", value: "Ornt.Hrzn" },
+  ]);
+  writer.f32(left);
+  writer.f32(top);
+  writer.f32(right);
+  writer.f32(bottom);
+  return writer.toBytes();
+}
+
+function writePsdAdditionalLayerInfo(writer, key, data, padTo = 2) {
+  const length = data.length + ((padTo - (data.length % padTo)) % padTo);
+  writer.ascii("8BIM");
+  writer.ascii(key);
+  writer.u32(length);
+  writer.bytes(data);
+  writer.pad(length - data.length);
 }
 
 function canvasToPsdChannelData(canvas) {
@@ -12204,6 +12670,9 @@ function psdLayerRecord(layerExport) {
   extra.u32(0);
   extra.u32(0);
   writePsdPascalString(extra, layerExport.layer.name);
+  if (layerExport.layer.type === "text" && layerExport.layer.text) {
+    writePsdAdditionalLayerInfo(extra, "TySh", psdTypeToolData(layerExport.layer));
+  }
   record.u32(extra.length);
   record.bytes(extra.toBytes());
   return record.toBytes();
@@ -12272,7 +12741,7 @@ function exportPsd() {
   link.href = objectUrl;
   link.click();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-  updateStatus("PSD exported with editable raster layers");
+  updateStatus("PSD exported with editable text layers");
 }
 
 function newDocument() {
@@ -13471,9 +13940,22 @@ function wireEvents() {
   });
   controls.textContent.addEventListener("input", () => {
     state.text.content = controls.textContent.value;
+    updateActiveTextLayer({ content: state.text.content });
+  });
+  controls.textContent.addEventListener("change", () => {
+    commitActiveTextLayerEdit("Edit text");
+  });
+  controls.textFont.addEventListener("change", () => {
+    state.text.fontFamily = controls.textFont.value;
+    updateActiveTextLayer({ fontFamily: state.text.fontFamily });
+    commitActiveTextLayerEdit("Change text font");
   });
   controls.textSize.addEventListener("input", () => {
     state.text.size = Number(controls.textSize.value);
+    updateActiveTextLayer({ size: state.text.size });
+  });
+  controls.textSize.addEventListener("change", () => {
+    commitActiveTextLayerEdit("Change text size");
   });
   controls.selectionFeather.addEventListener("input", () => {
     state.selectionFeather = Number(controls.selectionFeather.value);

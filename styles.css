@@ -340,6 +340,10 @@ kbd {
   grid-template-columns: auto 150px;
 }
 
+.option-control.font-option {
+  grid-template-columns: auto 132px;
+}
+
 .option-control input[type="text"],
 .option-control input[type="number"],
 .option-control select,
