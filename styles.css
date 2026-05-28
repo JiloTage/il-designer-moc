@@ -117,12 +117,6 @@ button:disabled {
   align-items: stretch;
   align-self: stretch;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.menu-list::-webkit-scrollbar {
-  display: none;
 }
 
 .menu-group {
