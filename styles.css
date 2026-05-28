@@ -113,13 +113,22 @@ button:disabled {
 
 .menu-list {
   display: flex;
+  flex: 1 1 auto;
   align-items: stretch;
   align-self: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.menu-list::-webkit-scrollbar {
+  display: none;
 }
 
 .menu-group {
   position: relative;
   display: flex;
+  flex: 0 0 auto;
 }
 
 .menu-trigger {
@@ -128,6 +137,7 @@ button:disabled {
   background: transparent;
   color: #d9dde4;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .menu-trigger:hover,
@@ -188,9 +198,9 @@ button:disabled {
 
 .file-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
 }
 
 .command,
@@ -207,6 +217,7 @@ button:disabled {
 
 .command,
 .icon-command {
+  flex: 0 0 auto;
   min-height: 26px;
   padding: 0 10px;
 }
@@ -236,6 +247,7 @@ button:disabled {
 
 .tool-readout {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   min-width: 168px;
   gap: 8px;
@@ -258,11 +270,16 @@ kbd {
 
 .option-control {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: auto 130px 48px;
   align-items: center;
   gap: 8px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.option-control > span {
+  white-space: nowrap;
 }
 
 .option-control.short {
@@ -315,6 +332,7 @@ kbd {
 
 .check-control {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   color: var(--muted);
@@ -324,6 +342,7 @@ kbd {
 
 .option-buttons {
   display: flex;
+  flex: 0 0 auto;
   gap: 6px;
 }
 
@@ -1240,7 +1259,6 @@ h2 {
     max-width: 142px;
   }
 
-  .menu-group:nth-child(n + 6),
   .option-control.text-option,
   .option-control.tiny {
     display: none;
