@@ -834,19 +834,13 @@ function createSampleLayers() {
     text: { content: "IL DESIGNER", fontFamily: "Georgia", size: 88, color: "#f7f7f2" },
   });
   renderTextLayer(titleLayer, { x: 170, y: 840 });
-  const captionLayer = createLayer("Caption", makeCanvas(1, 1), {
-    type: "text",
-    text: { content: "layered image editor", fontFamily: "Bahnschrift", size: 30, color: "#f7f7f2" },
-  });
-  renderTextLayer(captionLayer, { x: 176, y: 894 });
 
   state.layers = [
     createBackgroundLayer(background),
     createLayer("Color blocks", shapes),
     titleLayer,
-    captionLayer,
   ];
-  state.activeLayerId = captionLayer.id;
+  state.activeLayerId = titleLayer.id;
   state.fileName = "Untitled.psd";
   state.moveAutoSelect = true;
   state.showExtras = true;
