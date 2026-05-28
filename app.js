@@ -12998,6 +12998,21 @@ function executeCommand(command) {
   }
 }
 
+function closeMenuPopovers() {
+  document.querySelectorAll(".menu-group.menu-open").forEach((group) => {
+    group.classList.remove("menu-open");
+  });
+  document.querySelector(".menu-list")?.classList.remove("has-menu-open");
+}
+
+function openMenuPopover(group) {
+  document.querySelectorAll(".menu-group.menu-open").forEach((openGroup) => {
+    openGroup.classList.toggle("menu-open", openGroup === group);
+  });
+  group.classList.add("menu-open");
+  group.closest(".menu-list")?.classList.add("has-menu-open");
+}
+
 function wireEvents() {
   buttons.open.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
@@ -13126,10 +13141,50 @@ function wireEvents() {
   buttons.clearPath.addEventListener("click", clearWorkPath);
   buttons.resetAdjust.addEventListener("click", resetCurrentAdjustments);
 
-  document.querySelector(".menu-list").addEventListener("click", (event) => {
+  const menuList = document.querySelector(".menu-list");
+
+  menuList.addEventListener("click", (event) => {
+    const trigger = event.target.closest(".menu-trigger");
+    if (trigger) {
+      const group = trigger.closest(".menu-group");
+      const wasOpen = group.classList.contains("menu-open");
+      closeMenuPopovers();
+      if (!wasOpen) openMenuPopover(group);
+      return;
+    }
+
     const item = event.target.closest("[data-command]");
     if (!item) return;
+    closeMenuPopovers();
     executeCommand(item.dataset.command);
+  });
+
+  menuList.addEventListener("mouseover", (event) => {
+    if (!menuList.querySelector(".menu-group.menu-open")) return;
+    const group = event.target.closest(".menu-group");
+    if (!group || !menuList.contains(group)) return;
+    openMenuPopover(group);
+  });
+
+  menuList.addEventListener("focusin", (event) => {
+    const group = event.target.closest(".menu-group");
+    if (!group || !menuList.contains(group)) return;
+    openMenuPopover(group);
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".menu-list")) return;
+    closeMenuPopovers();
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (event.target.closest(".menu-list")) return;
+    closeMenuPopovers();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    closeMenuPopovers();
   });
 
   document.querySelector(".toolbar").addEventListener("click", (event) => {
