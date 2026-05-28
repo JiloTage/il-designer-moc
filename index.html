@@ -256,36 +256,36 @@
           <kbd id="activeToolKey">V</kbd>
         </div>
 
-        <label class="check-control">
+        <label class="check-control" data-tools="move">
           <input id="moveAutoSelect" type="checkbox" checked />
           <span>Auto-Select</span>
         </label>
 
-        <label class="option-control">
+        <label class="option-control" data-tools="brush eraser heal clone historyBrush smudge tone">
           <span>Brush</span>
           <input id="brushSize" type="range" min="2" max="160" value="28" />
           <output id="brushSizeValue">28 px</output>
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="brush eraser heal clone historyBrush smudge tone gradient shape">
           <span>Opacity</span>
           <input id="brushOpacity" type="range" min="5" max="100" value="100" />
           <output id="brushOpacityValue">100%</output>
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="heal">
           <span>Heal</span>
           <input id="healStrength" type="range" min="1" max="100" value="72" />
           <output id="healStrengthValue">72%</output>
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="magic">
           <span>Tolerance</span>
           <input id="wandTolerance" type="range" min="0" max="120" value="36" />
           <output id="wandToleranceValue">36</output>
         </label>
 
-        <label class="option-control selection-option">
+        <label class="option-control selection-option" data-tools="marquee magic lasso">
           <span>Selection</span>
           <select id="selectionMode">
             <option value="new">New</option>
@@ -295,17 +295,17 @@
           </select>
         </label>
 
-        <label class="check-control">
+        <label class="check-control" data-tools="magic">
           <input id="wandContiguous" type="checkbox" checked />
           <span>Contiguous</span>
         </label>
 
-        <label class="check-control">
+        <label class="check-control" data-tools="magic">
           <input id="wandSampleAll" type="checkbox" checked />
           <span>Sample All</span>
         </label>
 
-        <label class="option-control tiny">
+        <label class="option-control tiny" data-tools="gradient">
           <span>Gradient</span>
           <select id="gradientMode">
             <option value="linear">Linear</option>
@@ -313,12 +313,12 @@
           </select>
         </label>
 
-        <label class="check-control">
+        <label class="check-control" data-tools="gradient">
           <input id="gradientReverse" type="checkbox" />
           <span>Reverse</span>
         </label>
 
-        <label class="option-control tiny">
+        <label class="option-control tiny" data-tools="shape">
           <span>Shape</span>
           <select id="shapeMode">
             <option value="rectangle">Rect</option>
@@ -326,34 +326,34 @@
           </select>
         </label>
 
-        <label class="option-control color-option">
+        <label class="option-control color-option" data-tools="shape">
           <span>Fill</span>
           <input id="shapeFillColor" type="color" value="#f3d36b" />
         </label>
 
-        <label class="check-control">
+        <label class="check-control" data-tools="shape">
           <input id="shapeStrokeEnabled" type="checkbox" />
           <span>Stroke</span>
         </label>
 
-        <label class="option-control color-option">
+        <label class="option-control color-option" data-tools="shape">
           <span>Stroke</span>
           <input id="shapeStrokeColor" type="color" value="#f7f7f2" />
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="shape">
           <span title="Stroke width">W</span>
           <input id="shapeStrokeSize" type="range" min="1" max="64" value="6" />
           <output id="shapeStrokeSizeValue">6</output>
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="smudge">
           <span>Strength</span>
           <input id="smudgeStrength" type="range" min="1" max="100" value="55" />
           <output id="smudgeStrengthValue">55%</output>
         </label>
 
-        <label class="option-control tiny">
+        <label class="option-control tiny" data-tools="tone">
           <span>Mode</span>
           <select id="toneMode">
             <option value="dodge">Dodge</option>
@@ -361,36 +361,30 @@
           </select>
         </label>
 
-        <label class="option-control short">
+        <label class="option-control short" data-tools="tone">
           <span>Exposure</span>
           <input id="toneExposure" type="range" min="1" max="100" value="32" />
           <output id="toneExposureValue">32%</output>
         </label>
 
-        <label class="option-control text-option">
+        <label class="option-control text-option" data-tools="text">
           <span>Text</span>
           <input id="textContent" type="text" value="New text" />
         </label>
 
-        <label class="option-control tiny">
+        <label class="option-control tiny" data-tools="text">
           <span>Size</span>
           <input id="textSize" type="number" min="10" max="240" value="72" />
         </label>
 
-        <div class="option-buttons">
+        <div class="option-buttons" data-tools="crop">
           <button class="command" id="applyCropButton" type="button" title="Apply crop (Enter)" disabled>Apply Crop</button>
           <button class="command" id="cancelCropButton" type="button" title="Cancel crop (Esc)" disabled>Cancel</button>
-          <button class="command" id="clearSelectionButton" type="button" disabled>Clear Selection</button>
         </div>
 
-        <div class="option-spacer"></div>
-
-        <button class="icon-command" id="undoButton" type="button" title="Undo">Undo</button>
-        <button class="icon-command" id="redoButton" type="button" title="Redo">Redo</button>
-        <button class="icon-command" id="copyButton" type="button" title="Copy selection">Copy</button>
-        <button class="icon-command" id="pasteButton" type="button" title="Paste as layer" disabled>Paste</button>
-        <button class="icon-command" id="fitButton" type="button" title="Fit to screen (Ctrl+0)">Fit</button>
-        <button class="icon-command" id="resetButton" type="button" title="Reset document">Reset</button>
+        <div class="option-buttons" data-tools="marquee magic lasso">
+          <button class="command" id="clearSelectionButton" type="button" disabled>Clear Selection</button>
+        </div>
       </section>
 
       <main class="workspace">
@@ -399,78 +393,119 @@
             <span>V</span>
             <small>Move</small>
           </button>
-          <button class="tool-button" type="button" data-tool="marquee" title="Rectangular Marquee (M)">
-            <span>M</span>
-            <small>Select</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="magic" title="Magic Wand (W)">
-            <span>W</span>
-            <small>Wand</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="lasso" title="Lasso Tool (L)">
-            <span>L</span>
-            <small>Lasso</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="pen" title="Pen Tool (P)">
-            <span>P</span>
-            <small>Pen</small>
+          <div class="tool-group" aria-label="Selection tools">
+            <button class="tool-button" type="button" data-tool="marquee" title="Rectangular Marquee (M)">
+              <span>M</span>
+              <small>Select</small>
+            </button>
+            <div class="tool-flyout">
+              <button class="tool-button tool-menu-button" type="button" data-tool="marquee" title="Rectangular Marquee (M)">
+                <span>M</span>
+                <small>Select</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="magic" title="Magic Wand (W)">
+                <span>W</span>
+                <small>Wand</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="lasso" title="Lasso Tool (L)">
+                <span>L</span>
+                <small>Lasso</small>
+              </button>
+            </div>
+          </div>
+          <div class="tool-group" aria-label="Paint tools">
+            <button class="tool-button" type="button" data-tool="brush" title="Brush Tool (B), Shift-click draws a straight line, Alt/Option samples color">
+              <span>B</span>
+              <small>Brush</small>
+            </button>
+            <div class="tool-flyout">
+              <button class="tool-button tool-menu-button" type="button" data-tool="brush" title="Brush Tool (B), Shift-click draws a straight line, Alt/Option samples color">
+                <span>B</span>
+                <small>Brush</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="eraser" title="Eraser Tool (E), Shift-click erases a straight line, Alt/Option samples color">
+                <span>E</span>
+                <small>Erase</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="gradient" title="Gradient Tool (G)">
+                <span>G</span>
+                <small>Grad</small>
+              </button>
+            </div>
+          </div>
+          <button class="tool-button" type="button" data-tool="text" title="Type Tool (T)">
+            <span>T</span>
+            <small>Type</small>
           </button>
           <button class="tool-button" type="button" data-tool="crop" title="Crop Tool (C)">
             <span>C</span>
             <small>Crop</small>
           </button>
-          <button class="tool-button" type="button" data-tool="brush" title="Brush Tool (B), Shift-click draws a straight line, Alt/Option samples color">
-            <span>B</span>
-            <small>Brush</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="eraser" title="Eraser Tool (E), Shift-click erases a straight line, Alt/Option samples color">
-            <span>E</span>
-            <small>Erase</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="heal" title="Spot Healing Brush (J)">
-            <span>J</span>
-            <small>Heal</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="clone" title="Clone Stamp (S)">
-            <span>S</span>
-            <small>Stamp</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="historyBrush" title="History Brush (Y)">
-            <span>Y</span>
-            <small>Hist</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="gradient" title="Gradient Tool (G)">
-            <span>G</span>
-            <small>Grad</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="shape" title="Shape Tool (U)">
-            <span>U</span>
-            <small>Shape</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="smudge" title="Smudge Tool (R)">
-            <span>R</span>
-            <small>Smudge</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="tone" title="Dodge/Burn Tool (O)">
-            <span>O</span>
-            <small>Tone</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="text" title="Type Tool (T)">
-            <span>T</span>
-            <small>Type</small>
-          </button>
           <button class="tool-button" type="button" data-tool="eyedropper" title="Eyedropper Tool (I), Alt/Option samples background">
             <span>I</span>
             <small>Pick</small>
           </button>
-          <button class="tool-button" type="button" data-tool="hand" title="Hand Tool (H)">
-            <span>H</span>
-            <small>Hand</small>
-          </button>
-          <button class="tool-button" type="button" data-tool="zoom" title="Zoom Tool (Z)">
-            <span>Z</span>
-            <small>Zoom</small>
-          </button>
+          <div class="tool-group" aria-label="View tools">
+            <button class="tool-button" type="button" data-tool="hand" title="Hand Tool (H)">
+              <span>H</span>
+              <small>Hand</small>
+            </button>
+            <div class="tool-flyout">
+              <button class="tool-button tool-menu-button" type="button" data-tool="hand" title="Hand Tool (H)">
+                <span>H</span>
+                <small>Hand</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="zoom" title="Zoom Tool (Z)">
+                <span>Z</span>
+                <small>Zoom</small>
+              </button>
+            </div>
+          </div>
+          <div class="toolbar-divider" aria-hidden="true"></div>
+          <div class="tool-group" aria-label="Draw tools">
+            <button class="tool-button" type="button" data-tool="pen" title="Pen Tool (P)">
+              <span>P</span>
+              <small>Pen</small>
+            </button>
+            <div class="tool-flyout">
+              <button class="tool-button tool-menu-button" type="button" data-tool="pen" title="Pen Tool (P)">
+                <span>P</span>
+                <small>Pen</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="shape" title="Shape Tool (U)">
+                <span>U</span>
+                <small>Shape</small>
+              </button>
+            </div>
+          </div>
+          <div class="tool-group" aria-label="Retouch tools">
+            <button class="tool-button" type="button" data-tool="heal" title="Spot Healing Brush (J)">
+              <span>J</span>
+              <small>Heal</small>
+            </button>
+            <div class="tool-flyout">
+              <button class="tool-button tool-menu-button" type="button" data-tool="heal" title="Spot Healing Brush (J)">
+                <span>J</span>
+                <small>Heal</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="clone" title="Clone Stamp (S)">
+                <span>S</span>
+                <small>Stamp</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="historyBrush" title="History Brush (Y)">
+                <span>Y</span>
+                <small>Hist</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="smudge" title="Smudge Tool (R)">
+                <span>R</span>
+                <small>Smudge</small>
+              </button>
+              <button class="tool-button tool-menu-button" type="button" data-tool="tone" title="Dodge/Burn Tool (O)">
+                <span>O</span>
+                <small>Tone</small>
+              </button>
+            </div>
+          </div>
 
           <div class="toolbar-color-stack" aria-label="Foreground and background colors">
             <label class="color-chip foreground" title="Foreground color">

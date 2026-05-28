@@ -239,6 +239,10 @@ button:disabled {
   background: #1d2026;
 }
 
+.options-bar [hidden] {
+  display: none !important;
+}
+
 .tool-readout {
   display: flex;
   flex: 0 0 auto;
@@ -367,6 +371,7 @@ input[type="range"] {
 
 .tool-button {
   display: grid;
+  position: relative;
   width: 44px;
   min-height: 48px;
   grid-template-rows: 24px 13px;
@@ -405,6 +410,68 @@ input[type="range"] {
 .tool-button.active span {
   background: var(--accent);
   color: #07101e;
+}
+
+.tool-group {
+  position: relative;
+}
+
+.tool-group > .tool-button::after {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 4px solid #7d8795;
+  content: "";
+}
+
+.tool-group.active > .tool-button {
+  border-color: #526175;
+  background: #262b34;
+}
+
+.tool-group.active > .tool-button span {
+  background: var(--accent);
+  color: #07101e;
+}
+
+.tool-flyout {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(100% + 7px);
+  grid-template-columns: repeat(2, 72px);
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #303846;
+  border-radius: 6px;
+  background: #171a20;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.34);
+}
+
+.tool-group:hover .tool-flyout,
+.tool-group:focus-within .tool-flyout {
+  display: grid;
+}
+
+.tool-menu-button {
+  width: 72px;
+  min-height: 42px;
+  grid-template-rows: 22px 13px;
+}
+
+.tool-menu-button small {
+  max-width: 68px;
+}
+
+.toolbar-divider {
+  height: 1px;
+  margin: 3px 4px;
+  background: #303846;
 }
 
 .toolbar-color-stack {

@@ -135,15 +135,9 @@ const buttons = {
   open: document.querySelector("#openButton"),
   savePng: document.querySelector("#savePngButton"),
   saveJpg: document.querySelector("#saveJpgButton"),
-  reset: document.querySelector("#resetButton"),
   resetAdjust: document.querySelector("#resetAdjustButton"),
   newAdjustmentLayer: document.querySelector("#newAdjustmentLayerButton"),
-  undo: document.querySelector("#undoButton"),
-  redo: document.querySelector("#redoButton"),
   newHistorySnapshot: document.querySelector("#newHistorySnapshotButton"),
-  copy: document.querySelector("#copyButton"),
-  paste: document.querySelector("#pasteButton"),
-  fit: document.querySelector("#fitButton"),
   navigatorZoomOut: document.querySelector("#navigatorZoomOutButton"),
   navigatorZoomIn: document.querySelector("#navigatorZoomInButton"),
   filterBlur: document.querySelector("#filterBlurButton"),
@@ -2687,8 +2681,14 @@ function updateToolUi() {
   document.querySelectorAll(".tool-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.tool === state.activeTool);
   });
+  document.querySelectorAll(".tool-group").forEach((group) => {
+    group.classList.toggle("active", Boolean(group.querySelector(`[data-tool="${state.activeTool}"]`)));
+  });
   dom.activeToolName.textContent = toolInfo[state.activeTool].name;
   dom.activeToolKey.textContent = toolInfo[state.activeTool].key;
+  document.querySelectorAll(".options-bar [data-tools]").forEach((element) => {
+    element.hidden = !element.dataset.tools.split(/\s+/).includes(state.activeTool);
+  });
   buttons.applyCrop.disabled = !(state.activeTool === "crop" && state.cropRect);
   buttons.cancelCrop.disabled = !(state.activeTool === "crop" && state.cropRect);
   const layer = activeLayer();
@@ -2713,10 +2713,7 @@ function updateToolUi() {
 }
 
 function updateActionStates() {
-  buttons.undo.disabled = state.historyIndex <= 0;
-  buttons.redo.disabled = state.historyIndex >= state.history.length - 1;
   buttons.deleteLayer.disabled = state.layers.length <= 1;
-  buttons.paste.disabled = !state.clipboard;
   buttons.loadAlphaChannel.disabled = state.alphaChannels.length === 0;
   buttons.makePathSelection.disabled = state.workPath.length < 3;
   buttons.strokePath.disabled = state.workPath.length < 2;
@@ -12951,10 +12948,6 @@ function wireEvents() {
   });
   buttons.savePng.addEventListener("click", () => exportImage("image/png"));
   buttons.saveJpg.addEventListener("click", () => exportImage("image/jpeg"));
-  buttons.undo.addEventListener("click", undo);
-  buttons.redo.addEventListener("click", redo);
-  buttons.copy.addEventListener("click", () => copyPixels());
-  buttons.paste.addEventListener("click", pastePixels);
   buttons.newAdjustmentLayer.addEventListener("click", addAdjustmentLayer);
   buttons.filterBlur.addEventListener("click", applyGaussianBlurFilter);
   buttons.filterBoxBlur.addEventListener("click", applyBoxBlurFilter);
@@ -13005,8 +12998,6 @@ function wireEvents() {
   buttons.filterOffset.addEventListener("click", applyOffsetFilter);
   buttons.filterMaximum.addEventListener("click", () => applyExtremaFilter("maximum"));
   buttons.filterMinimum.addEventListener("click", () => applyExtremaFilter("minimum"));
-  buttons.fit.addEventListener("click", fitToScreen);
-  buttons.reset.addEventListener("click", resetDocument);
   buttons.newHistorySnapshot.addEventListener("click", createHistorySnapshot);
   buttons.applyCrop.addEventListener("click", applyCrop);
   buttons.cancelCrop.addEventListener("click", cancelCrop);
